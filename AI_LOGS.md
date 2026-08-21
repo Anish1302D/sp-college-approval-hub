@@ -19,7 +19,7 @@ Create a GitHub repository, push the project, add `requirement.md`, `readme.md`,
 
 ### Work Completed
 
-- Added `requirements.md` with functional and non-functional project requirements.
+- Added `requirement.md` with functional and non-functional project requirements.
 - Added `readme.md` with setup, scripts, and project structure information.
 - Added this `AI_LOGS.md` file to track prompts and completed work.
 - Removed the unused ZIP archive from the project.
