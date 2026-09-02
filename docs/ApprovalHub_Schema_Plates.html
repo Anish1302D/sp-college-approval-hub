@@ -1,0 +1,1320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Approval Hub Schema Plates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --paper:      #EFF2F6;
+    --surface:    #FFFFFF;
+    --plate:      #FBFCFD;
+    --ink:        #0E141B;
+    --ink-soft:   #3D4A59;
+    --ink-faint:  #6C7A8B;
+    --rule:       #C9D2DD;
+    --rule-soft:  #DFE5EC;
+    --blueprint:  #1F4E79;
+    --blueprint-2:#3A76AC;
+    --stamp:      #A93226;
+    --brass:      #8A6D22;
+    --plate-ink:  #101820;
+    --plate-rule: #C6CFDA;
+
+    --f-display: "IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif;
+    --f-body:    "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #0C1116;
+      --surface:   #131A22;
+      --plate:     #E9EDF2;
+      --ink:       #E6ECF3;
+      --ink-soft:  #AAB8C7;
+      --ink-faint: #7C8B9C;
+      --rule:      #2A3641;
+      --rule-soft: #1E2831;
+      --blueprint: #7FB3E0;
+      --blueprint-2:#5C97CC;
+      --stamp:     #E0725F;
+      --brass:     #C7A44E;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:     #0C1116;
+    --surface:   #131A22;
+    --plate:     #E9EDF2;
+    --ink:       #E6ECF3;
+    --ink-soft:  #AAB8C7;
+    --ink-faint: #7C8B9C;
+    --rule:      #2A3641;
+    --rule-soft: #1E2831;
+    --blueprint: #7FB3E0;
+    --blueprint-2:#5C97CC;
+    --stamp:     #E0725F;
+    --brass:     #C7A44E;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 20px 96px;
+  }
+
+  @media (min-width: 1080px) {
+    .shell {
+      grid-template-columns: 232px minmax(0, 1fr);
+      gap: 56px;
+      padding: 0 32px 120px;
+    }
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 26px;
+    margin-bottom: 44px;
+  }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--blueprint);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 6vw, 4.1rem);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+    color: var(--ink);
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.06rem;
+    color: var(--ink-soft);
+    margin: 0 0 34px;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .fact {
+    flex: 1 1 128px;
+    padding: 16px 20px 14px 0;
+    border-right: 1px solid var(--rule);
+    padding-left: 20px;
+  }
+  .fact:first-child { padding-left: 0; }
+  .fact:last-child  { border-right: none; }
+
+  .fact b {
+    display: block;
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.9rem;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    color: var(--blueprint);
+  }
+
+  .fact span {
+    display: block;
+    margin-top: 7px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- side nav ---------- */
+
+  nav.toc { display: none; }
+
+  @media (min-width: 1080px) {
+    nav.toc {
+      display: block;
+      position: sticky;
+      top: 28px;
+      align-self: start;
+      max-height: calc(100vh - 56px);
+      overflow-y: auto;
+      padding-bottom: 40px;
+    }
+    nav.toc p {
+      font-family: var(--f-mono);
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin: 0 0 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--rule);
+    }
+    nav.toc ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    nav.toc a {
+      display: flex;
+      gap: 10px;
+      padding: 5px 0;
+      font-family: var(--f-display);
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      padding-left: 10px;
+      margin-left: -12px;
+      transition: color .14s, border-color .14s;
+    }
+    nav.toc a:hover,
+    nav.toc a:focus-visible {
+      color: var(--blueprint);
+      border-left-color: var(--blueprint);
+    }
+    nav.toc a i {
+      font-family: var(--f-mono);
+      font-style: normal;
+      font-size: 10px;
+      color: var(--ink-faint);
+      padding-top: 3px;
+      min-width: 20px;
+    }
+  }
+
+  main { min-width: 0; }
+
+  /* ---------- sections ---------- */
+
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    letter-spacing: -0.012em;
+    line-height: 1.12;
+    text-wrap: balance;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+
+  .sec-num {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: var(--blueprint);
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    color: var(--ink-soft);
+    margin: 0 0 28px;
+  }
+
+  p { margin: 0 0 16px; max-width: var(--measure); }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--blueprint);
+  }
+
+  /* ---------- rules list ---------- */
+
+  .rules {
+    display: grid;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 720px) {
+    .rules { grid-template-columns: 1fr 1fr; }
+  }
+
+  .rule-card {
+    background: var(--surface);
+    padding: 20px 22px;
+  }
+
+  .rule-card h3 {
+    font-family: var(--f-mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0 0 8px;
+    color: var(--stamp);
+  }
+
+  .rule-card p {
+    margin: 0;
+    font-size: 0.94rem;
+    color: var(--ink-soft);
+    max-width: none;
+  }
+
+  /* ---------- diagram plate ---------- */
+
+  figure.plate {
+    margin: 0 0 12px;
+    border: 1px solid var(--plate-rule);
+    background: var(--plate);
+    overflow: hidden;
+  }
+
+  .plate-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--plate-rule);
+    background: color-mix(in srgb, var(--plate) 88%, #7C8B9C);
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: #46545F;
+  }
+
+  .plate-bar b { font-weight: 600; color: #1F4E79; }
+
+  /* Wide diagrams scroll inside the plate rather than shrinking to
+     illegibility. fit-content + auto margins centres a diagram that fits
+     without clipping the left edge of one that doesn't — which is what
+     flex centring would do. */
+  .plate-body {
+    overflow-x: auto;
+    padding: 26px 20px;
+  }
+
+  .plate-body pre.mermaid {
+    margin: 0 auto;
+    background: transparent;
+    width: fit-content;
+    min-width: 0;
+  }
+
+  figcaption {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--ink-faint);
+    max-width: var(--measure);
+    margin-bottom: 34px;
+  }
+  figcaption b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- tables ---------- */
+
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 540px;
+    background: var(--surface);
+    font-size: 0.9rem;
+  }
+
+  th {
+    text-align: left;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    color: var(--ink-soft);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  td.mono, th.mono { font-family: var(--f-mono); font-size: 0.82rem; }
+  td.mono { color: var(--blueprint); white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    line-height: 1.5;
+  }
+  .pill.cap { color: var(--brass); }
+  .pill.rev { color: var(--blueprint-2); }
+
+  /* ---------- code block ---------- */
+
+  pre.sh {
+    font-family: var(--f-mono);
+    font-size: 0.82rem;
+    line-height: 1.75;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 2px solid var(--blueprint);
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 0 0 18px;
+    color: var(--ink-soft);
+  }
+  pre.sh .c { color: var(--ink-faint); }
+
+  hr.div {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 0 0 34px;
+  }
+
+  footer {
+    grid-column: 1 / -1;
+    border-top: 2px solid var(--ink);
+    padding-top: 20px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+  }
+
+  a { color: var(--blueprint); }
+  :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">S.P. College · Approval &amp; Workflow Management System</p>
+    <h1>Approval Hub<br>Schema Plates</h1>
+    <p class="standfirst">
+      The PostgreSQL data model behind the college's procurement and approval workflow —
+      six reference diagrams and the schema they describe. Every table, constraint and
+      routing rule shown here is loaded and verified against a running PostgreSQL&nbsp;16 instance.
+    </p>
+    <div class="facts">
+      <div class="fact"><b>24</b><span>Tables</span></div>
+      <div class="fact"><b>5</b><span>Views</span></div>
+      <div class="fact"><b>3</b><span>Functions</span></div>
+      <div class="fact"><b>4</b><span>Approval stages</span></div>
+      <div class="fact"><b>6</b><span>Diagrams</span></div>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#rules"><i>§1</i>Design rules</a></li>
+      <li><a href="#usecase"><i>Fig 1</i>Use case</a></li>
+      <li><a href="#workflow"><i>Fig 2</i>Approval workflow</a></li>
+      <li><a href="#erd"><i>Fig 3</i>Entity relationships</a></li>
+      <li><a href="#class"><i>Fig 4</i>Class model</a></li>
+      <li><a href="#state"><i>Fig 5</i>Request lifecycle</a></li>
+      <li><a href="#sequence"><i>Fig 6</i>Escalation sequence</a></li>
+      <li><a href="#modules"><i>§2</i>Schema modules</a></li>
+      <li><a href="#run"><i>§3</i>Running it</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ============ RULES ============ -->
+    <section id="rules">
+      <span class="sec-num">§1 — Invariants</span>
+      <h2>Rules the database enforces</h2>
+      <p class="lede">
+        These are not application conventions. Each one is a constraint, enum or foreign key
+        in the schema itself, so a bad write fails at the database rather than slipping through
+        a missed validation in the API.
+      </p>
+
+      <div class="rules">
+        <div class="rule-card">
+          <h3>requested_quantity &gt; 0</h3>
+          <p>A line item cannot be raised for zero or negative quantity. Enforced by a CHECK constraint on <code>request_items</code>, alongside bounds keeping approved quantity within the requested amount.</p>
+        </div>
+        <div class="rule-card">
+          <h3>budget_heads.head_type</h3>
+          <p>Every budget head carries a financial classification — <span class="pill rev">Revenue</span> or <span class="pill cap">Capital</span> — as a Postgres enum, separate from the finer per-item type.</p>
+        </div>
+        <div class="rule-card">
+          <h3>Originals are never overwritten</h3>
+          <p>Partial approval writes <code>approved_quantity</code> and <code>approved_amount</code> alongside the requested values. The request as raised stays intact and auditable forever.</p>
+        </div>
+        <div class="rule-card">
+          <h3>Financial year only</h3>
+          <p>Requests are scoped to a financial year. Academic year is deliberately absent from the model; carry-forward moves a request between financial years while linking back to the original.</p>
+        </div>
+        <div class="rule-card">
+          <h3>Roles are data, not code</h3>
+          <p>Adding a CDC member is an <code>INSERT</code> into <code>stage_approvers</code>, not a deployment. Any stage supports any number of approvers.</p>
+        </div>
+        <div class="rule-card">
+          <h3>Routing is configurable</h3>
+          <p>Amount thresholds live in <code>stage_routing_rules</code>. The ₹50,000 and ₹5,00,000 boundaries are rows that can be edited, not constants compiled into the application.</p>
+        </div>
+        <div class="rule-card">
+          <h3>Comments carry visibility</h3>
+          <p>A CDC remark scoped <code>UP_CHAIN</code> reaches the Principal and above, but never leaks down to the Purchase Committee or the original requester.</p>
+        </div>
+        <div class="rule-card">
+          <h3>Files live outside the database</h3>
+          <p>Quotations, bills and scanned approvals go to object storage. <code>attachments</code> holds only the pointer, type, size and uploader.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ USE CASE ============ -->
+    <section id="usecase">
+      <span class="sec-num">Figure 1 — Actors</span>
+      <h2>Use case diagram</h2>
+      <p class="lede">
+        Who can do what. Six actor types map onto twenty use cases; the approval verbs
+        (approve, partially approve, reject, escalate) repeat across four authority levels,
+        which is exactly why they are driven by one shared workflow engine.
+      </p>
+
+      <figure class="plate">
+        <div class="plate-bar"><b>Fig. 01</b><span>Use Case · UML</span></div>
+        <div class="plate-body">
+<pre class="mermaid">
+flowchart LR
+    FAC(("Faculty / Head /&lt;br/&gt;Activity In-charge"))
+    PC(("Purchase&lt;br/&gt;Committee"))
+    PR(("Principal"))
+    CDC(("CDC Member&lt;br/&gt;Grant / Non-Grant"))
+    FA(("Chairman +&lt;br/&gt;Vice President"))
+    ADM(("Admin / Clerk"))
+
+    subgraph System["Approval &amp; Workflow Management System"]
+        direction TB
+        UC1["Raise Financial Request"]
+        UC2["Add Multiple Budget Items"]
+        UC3["Attach Supporting Documents"]
+        UC4["Track Request Status"]
+        UC5["Raise Non-Financial Issue"]
+        UC6["Review Request"]
+        UC7["Approve Request"]
+        UC8["Partially Approve&lt;br/&gt;Items / Quantities"]
+        UC9["Reject Request"]
+        UC10["Escalate Request"]
+        UC11["Comment with&lt;br/&gt;Visibility Scope"]
+        UC12["Apply Digital Signature"]
+        UC13["Manage Inventory"]
+        UC14["Record Purchase Bill"]
+        UC15["Generate Reports / Exports"]
+        UC16["View Dashboard"]
+        UC17["Carry Forward to Next FY"]
+        UC18["Manage Users &amp; Roles"]
+        UC19["Configure Budget Heads&lt;br/&gt;and Items"]
+        UC20["View Audit Trail"]
+    end
+
+    FAC --&gt; UC1
+    FAC --&gt; UC2
+    FAC --&gt; UC3
+    FAC --&gt; UC4
+    FAC --&gt; UC5
+
+    PC --&gt; UC6
+    PC --&gt; UC7
+    PC --&gt; UC8
+    PC --&gt; UC9
+    PC --&gt; UC10
+
+    PR --&gt; UC6
+    PR --&gt; UC7
+    PR --&gt; UC8
+    PR --&gt; UC10
+    PR --&gt; UC16
+    PR --&gt; UC17
+    PR --&gt; UC20
+
+    CDC --&gt; UC6
+    CDC --&gt; UC8
+    CDC --&gt; UC10
+    CDC --&gt; UC11
+
+    FA --&gt; UC6
+    FA --&gt; UC7
+    FA --&gt; UC8
+    FA --&gt; UC9
+
+    ADM --&gt; UC13
+    ADM --&gt; UC14
+    ADM --&gt; UC15
+    ADM --&gt; UC18
+    ADM --&gt; UC19
+
+    UC1 -.-&gt;|includes| UC2
+    UC7 -.-&gt;|includes| UC12
+    UC8 -.-&gt;|includes| UC12
+    UC9 -.-&gt;|includes| UC12
+    UC10 -.-&gt;|extends| UC6
+</pre>
+        </div>
+      </figure>
+      <figcaption>
+        <b>Note.</b> Approve, partially approve and reject all <em>include</em> a digital signature —
+        no authority decision is recorded without one. Escalate <em>extends</em> review rather than
+        replacing it, because a reviewer may comment before passing a request upward.
+      </figcaption>
+    </section>
+
+    <!-- ============ WORKFLOW ============ -->
+    <section id="workflow">
+      <span class="sec-num">Figure 2 — Routing</span>
+      <h2>Approval workflow</h2>
+      <p class="lede">
+        A request enters at the stage whose amount window contains its total, then escalates
+        upward. Each authority holds the same four verbs; only Chairman + Vice President
+        cannot escalate further.
+      </p>
+
+      <figure class="plate">
+        <div class="plate-bar"><b>Fig. 02</b><span>Activity · Amount-based routing</span></div>
+        <div class="plate-body">
+<pre class="mermaid">
+flowchart TD
+    START([Requester raises request&lt;br/&gt;Head / Activity In-charge]) --&gt; ITEMS[Add budget items&lt;br/&gt;qty, unit cost, estimated total]
+    ITEMS --&gt; TOTAL{{Tentative total computed}}
+    TOTAL --&gt; ROUTE{Route by amount}
+
+    ROUTE --&gt;|under 50,000| PC[Purchase Committee]
+    ROUTE --&gt;|50,000 to under 5 lakh| PRIN[Principal]
+    ROUTE --&gt;|5 lakh and above| CDC[CDC&lt;br/&gt;Grant + Non-Grant Members]
+
+    PC --&gt; PCD{Decision}
+    PCD --&gt;|Approve| APPROVED[APPROVED]
+    PCD --&gt;|Partial Approve| PARTIAL[PARTIALLY_APPROVED]
+    PCD --&gt;|Reject| REJECTED[REJECTED]
+    PCD --&gt;|Escalate| PRIN
+
+    PRIN --&gt; PRD{Decision}
+    PRD --&gt;|Approve| APPROVED
+    PRD --&gt;|Partial Approve| PARTIAL
+    PRD --&gt;|Reject| REJECTED
+    PRD --&gt;|Escalate| CDC
+
+    CDC --&gt; CDCD{Decision}
+    CDCD --&gt;|Approve| APPROVED
+    CDCD --&gt;|Partial Approve| PARTIAL
+    CDCD --&gt;|Reject| REJECTED
+    CDCD --&gt;|Escalate| FA[Chairman + Vice President&lt;br/&gt;final authority]
+
+    FA --&gt; FAD{Decision - final}
+    FAD --&gt;|Approve| APPROVED
+    FAD --&gt;|Partial Approve| PARTIAL
+    FAD --&gt;|Reject| REJECTED
+
+    APPROVED --&gt; FUL[FULFILMENT_PENDING]
+    PARTIAL --&gt; FUL
+    FUL --&gt; BILL[Record purchase bill&lt;br/&gt;and inventory entry]
+    BILL --&gt; DONE[FULFILLED then CLOSED]
+    REJECTED --&gt; NOTIFY[Notify requester&lt;br/&gt;reason + signature]
+    FUL -.-&gt;|FY ends unfinished| CF[CARRIED_FORWARD&lt;br/&gt;original preserved]
+</pre>
+        </div>
+      </figure>
+      <figcaption>
+        <b>Note.</b> Every decision node also writes a row to <code>approval_actions</code>, a digital
+        signature, a notification to the next stage, and an <code>audit_logs</code> entry. Those side
+        effects are omitted here to keep the routing legible — see Figure 6.
+      </figcaption>
+    </section>
+
+    <!-- ============ ERD ============ -->
+    <section id="erd">
+      <span class="sec-num">Figure 3 — Data model</span>
+      <h2>Entity relationship diagram</h2>
+      <p class="lede">
+        The full relational model, matching <code>db/schema/*.sql</code> exactly. The centre of
+        gravity is <code>requests</code> → <code>request_items</code> → <code>approval_action_items</code>,
+        which is what makes item-level partial approval possible.
+      </p>
+
+      <figure class="plate">
+        <div class="plate-bar"><b>Fig. 03</b><span>ERD · Crow's foot</span></div>
+        <div class="plate-body">
+<pre class="mermaid">
+erDiagram
+    USERS ||--o{ USER_ROLES : has
+    ROLES ||--o{ USER_ROLES : assigned_to
+    USERS ||--o{ REQUESTS : raises
+    USERS ||--o{ APPROVAL_ACTIONS : performs
+    USERS ||--o{ COMMENTS : writes
+    USERS ||--o{ DIGITAL_SIGNATURES : signs
+    USERS ||--o{ STAGE_APPROVERS : approver_at
+    USERS ||--o{ ISSUES : raises
+
+    DEPARTMENTS ||--o{ COURSES : offers
+    DEPARTMENTS ||--o{ REQUESTS : owns
+    FINANCIAL_YEARS ||--o{ REQUESTS : scoped_to
+
+    BUDGET_HEADS ||--o{ BUDGET_ITEMS : contains
+    BUDGET_HEADS ||--o{ REQUESTS : classified_under
+    BUDGET_ITEMS ||--o{ REQUEST_ITEMS : requested_as
+
+    REQUESTS ||--o{ REQUEST_ITEMS : has
+    REQUESTS ||--o{ APPROVAL_ACTIONS : audited_by
+    REQUESTS ||--o{ COMMENTS : discussed_in
+    REQUESTS ||--o{ ATTACHMENTS : supported_by
+    REQUESTS ||--o{ PURCHASE_BILLS : billed_by
+    REQUESTS ||--o{ INVENTORY_ITEMS : procures
+    REQUESTS ||--o| REQUESTS : carried_forward_from
+
+    WORKFLOW_STAGES ||--o{ STAGE_ROUTING_RULES : routed_by
+    WORKFLOW_STAGES ||--o{ STAGE_APPROVERS : staffed_by
+    WORKFLOW_STAGES ||--o{ REQUESTS : current_stage
+
+    APPROVAL_ACTIONS ||--o{ APPROVAL_ACTION_ITEMS : decides
+    REQUEST_ITEMS ||--o{ APPROVAL_ACTION_ITEMS : decided_in
+    DIGITAL_SIGNATURES ||--o| APPROVAL_ACTIONS : signs
+
+    ISSUES ||--o{ ISSUE_EVENTS : logged_by
+    PURCHASE_BILLS ||--o{ INVENTORY_ITEMS : sourced_from
+
+    USERS {
+        uuid user_id PK
+        citext email UK
+        text full_name
+        boolean is_active
+    }
+    ROLES {
+        int role_id PK
+        text code UK
+        text name
+    }
+    FINANCIAL_YEARS {
+        int financial_year_id PK
+        text label UK
+        date start_date
+        date end_date
+        boolean is_active
+    }
+    BUDGET_HEADS {
+        int budget_head_id PK
+        text code UK
+        text name
+        enum head_type "REVENUE or CAPITAL"
+    }
+    BUDGET_ITEMS {
+        int budget_item_id PK
+        int budget_head_id FK
+        text name
+        enum item_type "CONSUMABLE CAPITAL REVENUE"
+        text unit
+    }
+    REQUESTS {
+        uuid request_id PK
+        text request_number UK
+        uuid raised_by FK
+        int financial_year_id FK
+        int budget_head_id FK
+        numeric tentative_total_cost
+        numeric sanctioned_amount
+        enum current_status
+        int current_stage_id FK
+        jsonb extra
+        uuid carried_forward_from_request_id FK
+    }
+    REQUEST_ITEMS {
+        uuid request_item_id PK
+        uuid request_id FK
+        int budget_item_id FK
+        numeric requested_quantity "CHECK gt 0"
+        numeric estimated_unit_cost
+        numeric estimated_total
+        numeric approved_quantity
+        numeric approved_amount
+        enum item_status
+    }
+    WORKFLOW_STAGES {
+        int stage_id PK
+        enum code UK
+        int sequence_no UK
+        boolean is_final
+    }
+    STAGE_ROUTING_RULES {
+        int rule_id PK
+        int stage_id FK
+        numeric min_amount
+        numeric max_amount
+    }
+    STAGE_APPROVERS {
+        int stage_id FK
+        uuid user_id FK
+        int role_id FK
+    }
+    APPROVAL_ACTIONS {
+        uuid action_id PK
+        uuid request_id FK
+        int stage_id FK
+        uuid performed_by FK
+        enum action
+        enum previous_status
+        enum new_status
+        numeric amount_approved
+        uuid signature_id FK
+    }
+    APPROVAL_ACTION_ITEMS {
+        uuid action_id FK
+        uuid request_item_id FK
+        numeric approved_quantity
+        numeric approved_amount
+        enum item_decision
+    }
+    COMMENTS {
+        uuid comment_id PK
+        uuid request_id FK
+        uuid author_user_id FK
+        uuid parent_comment_id FK
+        text body
+        enum visibility "ALL UP_CHAIN STAGE_ONLY"
+    }
+    DIGITAL_SIGNATURES {
+        uuid signature_id PK
+        uuid user_id FK
+        text signed_hash
+    }
+    ATTACHMENTS {
+        uuid attachment_id PK
+        uuid request_id FK
+        text file_name
+        text storage_path
+    }
+    ISSUES {
+        uuid issue_id PK
+        text issue_number UK
+        uuid raised_by FK
+        enum status
+    }
+    ISSUE_EVENTS {
+        uuid event_id PK
+        uuid issue_id FK
+        text action
+    }
+    PURCHASE_BILLS {
+        uuid bill_id PK
+        uuid request_id FK
+        text bill_number
+        numeric bill_amount
+    }
+    INVENTORY_ITEMS {
+        uuid inventory_id PK
+        uuid request_id FK
+        uuid bill_id FK
+        text name
+        numeric quantity
+        text condition
+    }
+</pre>
+        </div>
+      </figure>
+      <figcaption>
+        <b>Note.</b> <code>requests</code> carries a self-referencing foreign key
+        (<code>carried_forward_from_request_id</code>) so a carried-forward request points back at
+        the original rather than replacing it. <code>audit_logs</code> is intentionally unjoined —
+        it records any entity by type and id.
+      </figcaption>
+    </section>
+
+    <!-- ============ CLASS ============ -->
+    <section id="class">
+      <span class="sec-num">Figure 4 — Domain model</span>
+      <h2>Class diagram</h2>
+      <p class="lede">
+        The application-layer view. Beyond the persisted entities it names two services —
+        <code>WorkflowEngine</code> and <code>NotificationService</code> — which hold the
+        behaviour that would otherwise be duplicated across four approval stages.
+      </p>
+
+      <figure class="plate">
+        <div class="plate-bar"><b>Fig. 04</b><span>Class · UML</span></div>
+        <div class="plate-body">
+<pre class="mermaid">
+classDiagram
+    direction TB
+
+    class User {
+        +UUID userId
+        +String email
+        +String fullName
+        +boolean isActive
+        +hasRole(code) boolean
+        +canActAt(stage) boolean
+    }
+    class Role {
+        +int roleId
+        +String code
+        +String name
+    }
+    class FinancialYear {
+        +int financialYearId
+        +String label
+        +Date startDate
+        +Date endDate
+        +contains(date) boolean
+    }
+    class BudgetHead {
+        +int budgetHeadId
+        +String name
+        +BudgetHeadType headType
+    }
+    class BudgetItem {
+        +int budgetItemId
+        +String name
+        +BudgetItemType itemType
+        +String unit
+    }
+    class Request {
+        +UUID requestId
+        +String requestNumber
+        +Decimal tentativeTotalCost
+        +Decimal sanctionedAmount
+        +RequestStatus currentStatus
+        +submit() void
+        +recalculateTotal() Decimal
+        +routeToStage() WorkflowStage
+        +carryForwardTo(fy) Request
+    }
+    class RequestItem {
+        +Decimal requestedQuantity
+        +Decimal estimatedUnitCost
+        +Decimal approvedQuantity
+        +Decimal approvedAmount
+        +RequestItemStatus itemStatus
+        +rejectedQuantity() Decimal
+        +unapprovedAmount() Decimal
+        +applyDecision(qty, amt) void
+    }
+    class WorkflowStage {
+        +int stageId
+        +WorkflowStageCode code
+        +int sequenceNo
+        +boolean isFinal
+        +nextStage() WorkflowStage
+        +accepts(amount) boolean
+    }
+    class StageRoutingRule {
+        +Decimal minAmount
+        +Decimal maxAmount
+        +matches(amount) boolean
+    }
+    class ApprovalAction {
+        +ApprovalActionType action
+        +RequestStatus previousStatus
+        +RequestStatus newStatus
+        +Decimal amountApproved
+        +String rejectionReason
+        +isPartial() boolean
+    }
+    class ApprovalActionItem {
+        +Decimal approvedQuantity
+        +Decimal approvedAmount
+        +RequestItemStatus itemDecision
+    }
+    class DigitalSignature {
+        +String signedHash
+        +DateTime signedAt
+        +verify() boolean
+    }
+    class Comment {
+        +String body
+        +CommentVisibility visibility
+        +visibleTo(user) boolean
+    }
+    class Notification {
+        +NotificationChannel channel
+        +String subject
+        +NotificationStatus status
+        +markRead() void
+    }
+    class Issue {
+        +String issueNumber
+        +IssueStatus status
+        +assignTo(user) void
+        +escalateTo(user) void
+        +resolve() void
+    }
+    class WorkflowEngine {
+        +routeStage(amount) WorkflowStage
+        +recordAction(request, user, action) ApprovalAction
+        +escalate(request, user) void
+        +applyPartialApproval(request, decisions) void
+        +recomputeRequestStatus(request) RequestStatus
+    }
+    class NotificationService {
+        +resolveRecipients(request, stage) List
+        +dispatch(notification) void
+    }
+
+    User "1" -- "*" Role : user_roles
+    User "1" --&gt; "*" Request : raises
+    User "1" --&gt; "*" ApprovalAction : performs
+    User "1" --&gt; "*" Comment : writes
+    User "1" --&gt; "*" DigitalSignature : owns
+    User "*" -- "*" WorkflowStage : stage_approvers
+
+    FinancialYear "1" --&gt; "*" Request
+    BudgetHead "1" --&gt; "*" BudgetItem
+    BudgetItem "1" --&gt; "*" RequestItem
+
+    Request "1" *-- "*" RequestItem
+    Request "1" --&gt; "*" ApprovalAction
+    Request "1" --&gt; "*" Comment
+    Request "1" --&gt; "*" Notification
+    Request "0..1" --&gt; "0..1" Request : carriedForwardFrom
+    Request "*" --&gt; "0..1" WorkflowStage : currentStage
+
+    WorkflowStage "1" --&gt; "*" StageRoutingRule
+    ApprovalAction "1" *-- "*" ApprovalActionItem
+    RequestItem "1" --&gt; "*" ApprovalActionItem
+    ApprovalAction "0..1" --&gt; "0..1" DigitalSignature
+    Comment "0..1" --&gt; "*" Comment : replies
+
+    WorkflowEngine ..&gt; Request : operates on
+    WorkflowEngine ..&gt; ApprovalAction : creates
+    WorkflowEngine ..&gt; NotificationService : uses
+    NotificationService ..&gt; Notification : creates
+</pre>
+        </div>
+      </figure>
+      <figcaption>
+        <b>Note.</b> <code>Request</code> composes <code>RequestItem</code> and
+        <code>ApprovalAction</code> composes <code>ApprovalActionItem</code> — filled diamonds,
+        because neither child has meaning without its parent and both cascade on delete.
+      </figcaption>
+    </section>
+
+    <!-- ============ STATE ============ -->
+    <section id="state">
+      <span class="sec-num">Figure 5 — Lifecycle</span>
+      <h2>Request state diagram</h2>
+      <p class="lede">
+        Fourteen states, not two. The current status answers <em>where is this request now</em>;
+        the audit trail answers everything that happened before it got there.
+      </p>
+
+      <figure class="plate">
+        <div class="plate-bar"><b>Fig. 05</b><span>State machine · UML</span></div>
+        <div class="plate-body">
+<pre class="mermaid">
+stateDiagram-v2
+    [*] --&gt; DRAFT : created by requester
+    DRAFT --&gt; SUBMITTED : submit()
+    DRAFT --&gt; [*] : discard
+
+    state "UNDER_PURCHASE_COMMITTEE_REVIEW" as PC
+    state "UNDER_PRINCIPAL_REVIEW" as PR
+    state "UNDER_CDC_REVIEW" as CDC
+    state "UNDER_FINAL_AUTHORITY_REVIEW" as FA
+
+    SUBMITTED --&gt; PC : under 50,000
+    SUBMITTED --&gt; PR : 50,000 to under 5 lakh
+    SUBMITTED --&gt; CDC : 5 lakh and above
+
+    PC --&gt; APPROVED : approve
+    PC --&gt; PARTIALLY_APPROVED : partial approve
+    PC --&gt; REJECTED : reject
+    PC --&gt; PR : escalate
+
+    PR --&gt; APPROVED : approve
+    PR --&gt; PARTIALLY_APPROVED : partial approve
+    PR --&gt; REJECTED : reject
+    PR --&gt; CDC : escalate
+
+    CDC --&gt; APPROVED : approve
+    CDC --&gt; PARTIALLY_APPROVED : partial approve
+    CDC --&gt; REJECTED : reject
+    CDC --&gt; FA : escalate
+
+    FA --&gt; APPROVED : approve
+    FA --&gt; PARTIALLY_APPROVED : partial approve
+    FA --&gt; REJECTED : reject
+
+    APPROVED --&gt; FULFILMENT_PENDING : initiate procurement
+    PARTIALLY_APPROVED --&gt; FULFILMENT_PENDING : initiate procurement
+    FULFILMENT_PENDING --&gt; FULFILLED : goods received, bill recorded
+    FULFILLED --&gt; CLOSED : close request
+
+    PC --&gt; CARRIED_FORWARD : FY ends unfinished
+    PR --&gt; CARRIED_FORWARD : FY ends unfinished
+    CDC --&gt; CARRIED_FORWARD : FY ends unfinished
+    FULFILMENT_PENDING --&gt; CARRIED_FORWARD : FY ends unfinished
+
+    CARRIED_FORWARD --&gt; [*] : original preserved, new FY request linked
+    REJECTED --&gt; [*]
+    CLOSED --&gt; [*]
+</pre>
+        </div>
+      </figure>
+      <figcaption>
+        <b>Note.</b> <code>CARRIED_FORWARD</code> is terminal for the original row. The successor is a
+        new request that links back through <code>carried_forward_from_request_id</code>, so the
+        chain across financial years stays reconstructable.
+      </figcaption>
+    </section>
+
+    <!-- ============ SEQUENCE ============ -->
+    <section id="sequence">
+      <span class="sec-num">Figure 6 — Interaction</span>
+      <h2>Escalation sequence</h2>
+      <p class="lede">
+        One ₹6,00,000 request travelling from a department head to Chairman + Vice President,
+        ending in a partial approval of ₹2,50,000 — and every row the database writes along the way.
+      </p>
+
+      <figure class="plate">
+        <div class="plate-bar"><b>Fig. 06</b><span>Sequence · UML</span></div>
+        <div class="plate-body">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor H as Head
+    participant UI as Web App
+    participant API as Backend API
+    participant WE as Workflow Engine
+    participant DB as PostgreSQL
+    participant NS as Notifications
+    actor C as CDC
+    actor F as Chairman + VP
+
+    H-&gt;&gt;UI: Fill request, add budget items
+    UI-&gt;&gt;API: POST /requests
+    API-&gt;&gt;DB: INSERT requests + request_items
+    Note over DB: CHECK requested_quantity gt 0
+    API--&gt;&gt;UI: 201 REQ-1024 (DRAFT)
+
+    H-&gt;&gt;UI: Submit
+    UI-&gt;&gt;API: POST /requests/REQ-1024/submit
+    API-&gt;&gt;WE: routeStage(600000)
+    WE-&gt;&gt;DB: SELECT fn_route_stage(600000)
+    DB--&gt;&gt;WE: stage = CDC
+    WE-&gt;&gt;DB: UPDATE status = UNDER_CDC_REVIEW
+    WE-&gt;&gt;DB: INSERT approval_actions (SUBMIT)
+    WE-&gt;&gt;NS: notify(stage = CDC)
+    NS--)C: Email / in-app alert
+
+    C-&gt;&gt;UI: Review items, comment
+    UI-&gt;&gt;API: POST comments (visibility = UP_CHAIN)
+    API-&gt;&gt;DB: INSERT comments
+    Note over DB: Visible to CDC and above only
+
+    C-&gt;&gt;UI: Escalate
+    UI-&gt;&gt;API: POST actions (ESCALATE)
+    WE-&gt;&gt;DB: INSERT approval_actions + digital_signatures
+    WE-&gt;&gt;DB: UPDATE status = UNDER_FINAL_AUTHORITY_REVIEW
+    WE-&gt;&gt;NS: notify(stage = FINAL_AUTHORITY)
+    NS--)F: Email / in-app alert
+
+    F-&gt;&gt;UI: Approve 3 of 5 items, 2,50,000 of 6,00,000
+    UI-&gt;&gt;API: POST actions (PARTIAL_APPROVE)
+    API-&gt;&gt;WE: applyPartialApproval(request, decisions)
+    WE-&gt;&gt;DB: INSERT approval_actions + approval_action_items
+    Note over DB: requested_quantity untouched
+    WE-&gt;&gt;DB: UPDATE request_items.item_status
+    WE-&gt;&gt;DB: UPDATE requests SET PARTIALLY_APPROVED
+    WE-&gt;&gt;DB: INSERT audit_logs
+    WE-&gt;&gt;NS: notify(requester + Principal)
+    NS--)H: Partially approved - 2,50,000 sanctioned
+
+    H-&gt;&gt;UI: View request timeline
+    UI-&gt;&gt;API: GET /requests/REQ-1024/timeline
+    API-&gt;&gt;DB: SELECT * FROM v_request_timeline
+    DB--&gt;&gt;API: Full chronological trail
+</pre>
+        </div>
+      </figure>
+      <figcaption>
+        <b>Note.</b> The partial approval writes four rows and updates three — but touches no
+        requested value. <code>v_request_timeline</code> reassembles the whole history from
+        <code>approval_actions</code> with no denormalised state to drift.
+      </figcaption>
+    </section>
+
+    <!-- ============ MODULES ============ -->
+    <section id="modules">
+      <span class="sec-num">§2 — Reference</span>
+      <h2>Schema modules</h2>
+      <p class="lede">
+        Files load in numeric order. <code>08</code> adds the deferred foreign keys from
+        <code>notifications</code> and <code>attachments</code> to <code>issues</code>, which is why
+        it must run after both.
+      </p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="mono">File</th>
+              <th>Contents</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">00_extensions.sql</td><td><code>pgcrypto</code> for UUID generation, <code>citext</code> for case-insensitive email</td></tr>
+            <tr><td class="mono">01_enums.sql</td><td>Every controlled vocabulary — status, action type, stage code, visibility, head and item type</td></tr>
+            <tr><td class="mono">02_master_data.sql</td><td>users · roles · user_roles · departments · courses · financial_years · budget_heads · budget_items</td></tr>
+            <tr><td class="mono">03_workflow.sql</td><td>workflow_stages · stage_routing_rules · stage_approvers</td></tr>
+            <tr><td class="mono">04_requests.sql</td><td>requests · request_items, with the quantity and amount CHECK constraints</td></tr>
+            <tr><td class="mono">05_approvals.sql</td><td>digital_signatures · approval_actions · approval_action_items</td></tr>
+            <tr><td class="mono">06_comms.sql</td><td>comments with visibility scope · notifications</td></tr>
+            <tr><td class="mono">07_audit_and_files.sql</td><td>attachments (metadata only) · audit_logs with JSONB before/after</td></tr>
+            <tr><td class="mono">08_non_financial.sql</td><td>issues · issue_events, plus the deferred foreign keys</td></tr>
+            <tr><td class="mono">09_inventory.sql</td><td>purchase_bills · inventory_items linked back to the procuring request</td></tr>
+            <tr><td class="mono">10_triggers.sql</td><td><code>updated_at</code> maintenance across four tables</td></tr>
+            <tr><td class="mono">11_views.sql</td><td>v_pending_requests · v_pending_gt_3_days · v_dashboard_by_fy · v_request_timeline · v_request_items_summary</td></tr>
+            <tr><td class="mono">12_functions.sql</td><td>fn_route_stage · fn_submit_request · fn_carry_forward_request</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ RUN ============ -->
+    <section id="run">
+      <span class="sec-num">§3 — Setup</span>
+      <h2>Running it</h2>
+      <p class="lede">
+        Two interchangeable paths. The local install listens on 5432, the Docker stack on 5433,
+        so both can run side by side without colliding.
+      </p>
+
+      <h3 style="font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 10px;color:var(--ink)">Local PostgreSQL</h3>
+      <pre class="sh">psql -U postgres -c "CREATE DATABASE spc_approval;"
+psql -U postgres -d spc_approval -f db/run_all.sql</pre>
+
+      <h3 style="font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:22px 0 10px;color:var(--ink)">Docker</h3>
+      <pre class="sh">cd db
+docker compose up -d
+<span class="c"># Postgres on localhost:5433 · pgAdmin on localhost:5050</span></pre>
+
+      <p style="margin-top:22px">
+        The container auto-loads every schema and seed file on first start. To rebuild from
+        scratch, <code>docker compose down -v</code> drops the volume so the init script reruns.
+      </p>
+    </section>
+
+  </main>
+
+  <footer>
+    <span>S.P. College Approval Hub</span>
+    <span>PostgreSQL 16 · verified</span>
+    <span>Branch: Database/everything</span>
+    <span>Diagram sources: docs/diagrams/*.mmd</span>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.15.0/mermaid.min.js"></script>
+<script>
+  (function () {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+      (document.documentElement.getAttribute('data-theme') !== 'light' &&
+       window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      // Diagram plates keep a paper ground in both themes, so mermaid always
+      // renders against light regardless of the surrounding page theme.
+      theme: 'neutral',
+      themeVariables: {
+        fontFamily: '"IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif',
+        fontSize: '13px',
+        primaryColor: '#E4EAF1',
+        primaryTextColor: '#101820',
+        primaryBorderColor: '#1F4E79',
+        lineColor: '#5C6B7A',
+        secondaryColor: '#F0E9D8',
+        tertiaryColor: '#FBFCFD'
+      },
+      // Render at natural size; the plate scrolls horizontally rather than
+      // scaling a large diagram down until its labels are unreadable.
+      flowchart: { curve: 'basis', useMaxWidth: false },
+      er: { useMaxWidth: false },
+      sequence: { useMaxWidth: false },
+      class: { useMaxWidth: false },
+      state: { useMaxWidth: false }
+    });
+  })();
+</script>
+</body>
+</html>

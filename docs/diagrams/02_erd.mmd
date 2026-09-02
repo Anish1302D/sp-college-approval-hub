@@ -1,0 +1,236 @@
+%% Entity Relationship Diagram — matches db/schema/*.sql
+erDiagram
+    USERS ||--o{ USER_ROLES : has
+    ROLES ||--o{ USER_ROLES : assigned_to
+    USERS ||--o{ REQUESTS : raises
+    USERS ||--o{ APPROVAL_ACTIONS : performs
+    USERS ||--o{ COMMENTS : writes
+    USERS ||--o{ NOTIFICATIONS : receives
+    USERS ||--o{ DIGITAL_SIGNATURES : signs
+    USERS ||--o{ ATTACHMENTS : uploads
+    USERS ||--o{ ISSUES : raises
+    USERS ||--o{ STAGE_APPROVERS : approver_at
+
+    DEPARTMENTS ||--o{ COURSES : offers
+    DEPARTMENTS ||--o{ REQUESTS : owns
+    COURSES     ||--o{ REQUESTS : for
+
+    FINANCIAL_YEARS ||--o{ REQUESTS : scoped_to
+
+    BUDGET_HEADS ||--o{ BUDGET_ITEMS : contains
+    BUDGET_HEADS ||--o{ REQUESTS : classified_under
+    BUDGET_ITEMS ||--o{ REQUEST_ITEMS : requested_as
+
+    REQUESTS ||--o{ REQUEST_ITEMS : has
+    REQUESTS ||--o{ APPROVAL_ACTIONS : audited_by
+    REQUESTS ||--o{ COMMENTS : discussed_in
+    REQUESTS ||--o{ ATTACHMENTS : supported_by
+    REQUESTS ||--o{ NOTIFICATIONS : triggers
+    REQUESTS ||--o{ PURCHASE_BILLS : billed_by
+    REQUESTS ||--o{ INVENTORY_ITEMS : procures
+    REQUESTS ||--o| REQUESTS : carried_forward_from
+
+    WORKFLOW_STAGES ||--o{ STAGE_ROUTING_RULES : routed_by
+    WORKFLOW_STAGES ||--o{ STAGE_APPROVERS : staffed_by
+    WORKFLOW_STAGES ||--o{ APPROVAL_ACTIONS : at
+    WORKFLOW_STAGES ||--o{ REQUESTS : current_stage
+
+    APPROVAL_ACTIONS ||--o{ APPROVAL_ACTION_ITEMS : decides
+    REQUEST_ITEMS    ||--o{ APPROVAL_ACTION_ITEMS : decided_in
+    DIGITAL_SIGNATURES ||--o| APPROVAL_ACTIONS : signs
+
+    ISSUES ||--o{ ISSUE_EVENTS : logged_by
+    ISSUES ||--o{ NOTIFICATIONS : triggers
+    ISSUES ||--o{ ATTACHMENTS : supported_by
+
+    PURCHASE_BILLS ||--o{ INVENTORY_ITEMS : sourced_from
+
+    USERS {
+        uuid user_id PK
+        citext email UK
+        text full_name
+        text password_hash
+        boolean is_active
+    }
+    ROLES {
+        int role_id PK
+        text code UK
+        text name
+    }
+    USER_ROLES {
+        uuid user_id FK
+        int role_id FK
+    }
+    DEPARTMENTS {
+        int department_id PK
+        text code UK
+        text name
+    }
+    COURSES {
+        int course_id PK
+        int department_id FK
+        text code
+        text name
+    }
+    FINANCIAL_YEARS {
+        int financial_year_id PK
+        text label UK
+        date start_date
+        date end_date
+        boolean is_active
+    }
+    BUDGET_HEADS {
+        int budget_head_id PK
+        text code UK
+        text name
+        enum head_type "REVENUE|CAPITAL"
+    }
+    BUDGET_ITEMS {
+        int budget_item_id PK
+        int budget_head_id FK
+        text code
+        text name
+        enum item_type "CONSUMABLE|CAPITAL|REVENUE"
+        text unit
+    }
+    REQUESTS {
+        uuid request_id PK
+        text request_number UK
+        uuid raised_by FK
+        int department_id FK
+        int course_id FK
+        int financial_year_id FK
+        int budget_head_id FK
+        text title
+        numeric tentative_total_cost
+        numeric sanctioned_amount
+        enum current_status
+        int current_stage_id FK
+        jsonb extra
+        uuid carried_forward_from_request_id FK
+    }
+    REQUEST_ITEMS {
+        uuid request_item_id PK
+        uuid request_id FK
+        int budget_item_id FK
+        enum item_type_snapshot
+        numeric requested_quantity "CHECK > 0"
+        numeric estimated_unit_cost
+        numeric estimated_total
+        numeric approved_quantity
+        numeric approved_amount
+        enum item_status
+    }
+    WORKFLOW_STAGES {
+        int stage_id PK
+        enum code UK
+        text name
+        int sequence_no UK
+        boolean is_final
+    }
+    STAGE_ROUTING_RULES {
+        int rule_id PK
+        int stage_id FK
+        numeric min_amount
+        numeric max_amount
+    }
+    STAGE_APPROVERS {
+        int stage_id FK
+        uuid user_id FK
+        int role_id FK
+    }
+    APPROVAL_ACTIONS {
+        uuid action_id PK
+        uuid request_id FK
+        int stage_id FK
+        uuid performed_by FK
+        enum action
+        enum previous_status
+        enum new_status
+        numeric amount_requested_snapshot
+        numeric amount_approved
+        text rejection_reason
+        uuid signature_id FK
+    }
+    APPROVAL_ACTION_ITEMS {
+        uuid action_id FK
+        uuid request_item_id FK
+        numeric approved_quantity
+        numeric approved_amount
+        enum item_decision
+    }
+    DIGITAL_SIGNATURES {
+        uuid signature_id PK
+        uuid user_id FK
+        text signed_hash
+        timestamptz signed_at
+    }
+    COMMENTS {
+        uuid comment_id PK
+        uuid request_id FK
+        uuid author_user_id FK
+        int stage_id FK
+        uuid parent_comment_id FK
+        text body
+        enum visibility "ALL|UP_CHAIN|STAGE_ONLY"
+    }
+    NOTIFICATIONS {
+        uuid notification_id PK
+        uuid user_id FK
+        uuid request_id FK
+        uuid issue_id FK
+        enum channel
+        enum status
+    }
+    ATTACHMENTS {
+        uuid attachment_id PK
+        uuid request_id FK
+        uuid action_id FK
+        uuid issue_id FK
+        text file_name
+        text storage_path
+        uuid uploaded_by FK
+    }
+    AUDIT_LOGS {
+        bigint audit_id PK
+        text entity_type
+        text entity_id
+        uuid actor_user_id FK
+        text action
+        jsonb before_json
+        jsonb after_json
+    }
+    ISSUES {
+        uuid issue_id PK
+        text issue_number UK
+        uuid raised_by FK
+        uuid assigned_to FK
+        text title
+        text description
+        enum status
+    }
+    ISSUE_EVENTS {
+        uuid event_id PK
+        uuid issue_id FK
+        uuid actor_user_id FK
+        text action
+        text note
+    }
+    PURCHASE_BILLS {
+        uuid bill_id PK
+        uuid request_id FK
+        text bill_number
+        text vendor_name
+        numeric bill_amount
+        uuid attachment_id FK
+    }
+    INVENTORY_ITEMS {
+        uuid inventory_id PK
+        int budget_item_id FK
+        uuid request_id FK
+        uuid bill_id FK
+        int department_id FK
+        text name
+        numeric quantity
+        text condition
+    }

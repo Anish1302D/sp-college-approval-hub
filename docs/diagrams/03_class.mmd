@@ -1,0 +1,271 @@
+%% Class Diagram — domain model with behaviour, for the application layer
+classDiagram
+    direction TB
+
+    class User {
+        +UUID userId
+        +String email
+        +String fullName
+        -String passwordHash
+        +boolean isActive
+        +List~Role~ roles
+        +hasRole(code) boolean
+        +canActAt(stage) boolean
+    }
+
+    class Role {
+        +int roleId
+        +String code
+        +String name
+        +String description
+    }
+
+    class Department {
+        +int departmentId
+        +String code
+        +String name
+        +List~Course~ courses
+    }
+
+    class Course {
+        +int courseId
+        +String code
+        +String name
+    }
+
+    class FinancialYear {
+        +int financialYearId
+        +String label
+        +Date startDate
+        +Date endDate
+        +boolean isActive
+        +contains(date) boolean
+    }
+
+    class BudgetHead {
+        +int budgetHeadId
+        +String code
+        +String name
+        +BudgetHeadType headType
+        +List~BudgetItem~ items
+    }
+
+    class BudgetItem {
+        +int budgetItemId
+        +String code
+        +String name
+        +BudgetItemType itemType
+        +String unit
+    }
+
+    class Request {
+        +UUID requestId
+        +String requestNumber
+        +String title
+        +String description
+        +Decimal tentativeTotalCost
+        +Decimal sanctionedAmount
+        +RequestStatus currentStatus
+        +JSON extra
+        +List~RequestItem~ items
+        +submit() void
+        +recalculateTotal() Decimal
+        +routeToStage() WorkflowStage
+        +carryForwardTo(fy) Request
+        +isEditable() boolean
+    }
+
+    class RequestItem {
+        +UUID requestItemId
+        +BudgetItemType itemTypeSnapshot
+        +Decimal requestedQuantity
+        +Decimal estimatedUnitCost
+        +Decimal estimatedTotal
+        +Decimal approvedQuantity
+        +Decimal approvedAmount
+        +RequestItemStatus itemStatus
+        +String remarks
+        +rejectedQuantity() Decimal
+        +unapprovedAmount() Decimal
+        +applyDecision(qty, amt) void
+    }
+
+    class WorkflowStage {
+        +int stageId
+        +WorkflowStageCode code
+        +String name
+        +int sequenceNo
+        +boolean isFinal
+        +List~User~ approvers
+        +nextStage() WorkflowStage
+        +accepts(amount) boolean
+    }
+
+    class StageRoutingRule {
+        +int ruleId
+        +Decimal minAmount
+        +Decimal maxAmount
+        +matches(amount) boolean
+    }
+
+    class ApprovalAction {
+        +UUID actionId
+        +ApprovalActionType action
+        +RequestStatus previousStatus
+        +RequestStatus newStatus
+        +Decimal amountRequestedSnapshot
+        +Decimal amountApproved
+        +String rejectionReason
+        +String comments
+        +DateTime createdAt
+        +List~ApprovalActionItem~ itemDecisions
+        +isPartial() boolean
+    }
+
+    class ApprovalActionItem {
+        +Decimal approvedQuantity
+        +Decimal approvedAmount
+        +RequestItemStatus itemDecision
+        +String remarks
+    }
+
+    class DigitalSignature {
+        +UUID signatureId
+        +String signedHash
+        +DateTime signedAt
+        +verify() boolean
+    }
+
+    class Comment {
+        +UUID commentId
+        +String body
+        +CommentVisibility visibility
+        +DateTime createdAt
+        +visibleTo(user) boolean
+    }
+
+    class Notification {
+        +UUID notificationId
+        +NotificationChannel channel
+        +String subject
+        +String body
+        +NotificationStatus status
+        +markRead() void
+    }
+
+    class Attachment {
+        +UUID attachmentId
+        +String fileName
+        +String mimeType
+        +long sizeBytes
+        +String storagePath
+        +downloadUrl() String
+    }
+
+    class AuditLog {
+        +long auditId
+        +String entityType
+        +String entityId
+        +String action
+        +JSON beforeJson
+        +JSON afterJson
+        +DateTime createdAt
+    }
+
+    class Issue {
+        +UUID issueId
+        +String issueNumber
+        +String title
+        +String description
+        +IssueStatus status
+        +assignTo(user) void
+        +escalateTo(user) void
+        +resolve() void
+    }
+
+    class IssueEvent {
+        +UUID eventId
+        +String action
+        +String note
+        +DateTime createdAt
+    }
+
+    class PurchaseBill {
+        +UUID billId
+        +String billNumber
+        +String vendorName
+        +Date billDate
+        +Decimal billAmount
+    }
+
+    class InventoryItem {
+        +UUID inventoryId
+        +String name
+        +Decimal quantity
+        +String unit
+        +String condition
+        +String location
+        +Date acquiredOn
+    }
+
+    class WorkflowEngine {
+        +routeStage(amount) WorkflowStage
+        +recordAction(request, user, action) ApprovalAction
+        +escalate(request, user) void
+        +applyPartialApproval(request, decisions) void
+        +recomputeRequestStatus(request) RequestStatus
+    }
+
+    class NotificationService {
+        +resolveRecipients(request, stage) List~User~
+        +dispatch(notification) void
+    }
+
+    %% Relationships
+    User "1" -- "*" Role : user_roles
+    User "1" --> "*" Request : raises
+    User "1" --> "*" ApprovalAction : performs
+    User "1" --> "*" Comment : writes
+    User "1" --> "*" Notification : receives
+    User "1" --> "*" DigitalSignature : owns
+    User "*" -- "*" WorkflowStage : stage_approvers
+
+    Department "1" --> "*" Course
+    Department "1" --> "*" Request
+
+    FinancialYear "1" --> "*" Request
+
+    BudgetHead "1" --> "*" BudgetItem
+    BudgetHead "1" --> "*" Request
+    BudgetItem "1" --> "*" RequestItem
+
+    Request "1" *-- "*" RequestItem : composition
+    Request "1" --> "*" ApprovalAction
+    Request "1" --> "*" Comment
+    Request "1" --> "*" Attachment
+    Request "1" --> "*" Notification
+    Request "1" --> "*" PurchaseBill
+    Request "1" --> "*" InventoryItem
+    Request "0..1" --> "0..1" Request : carriedForwardFrom
+    Request "*" --> "0..1" WorkflowStage : currentStage
+
+    WorkflowStage "1" --> "*" StageRoutingRule
+    WorkflowStage "1" --> "*" ApprovalAction
+
+    ApprovalAction "1" *-- "*" ApprovalActionItem
+    RequestItem "1" --> "*" ApprovalActionItem
+    ApprovalAction "0..1" --> "0..1" DigitalSignature
+
+    Comment "0..1" --> "*" Comment : replies
+
+    Issue "1" *-- "*" IssueEvent
+    Issue "1" --> "*" Attachment
+    Issue "1" --> "*" Notification
+
+    PurchaseBill "1" --> "*" InventoryItem
+
+    WorkflowEngine ..> Request : operates on
+    WorkflowEngine ..> ApprovalAction : creates
+    WorkflowEngine ..> WorkflowStage : reads
+    NotificationService ..> Notification : creates
+    WorkflowEngine ..> NotificationService : uses
