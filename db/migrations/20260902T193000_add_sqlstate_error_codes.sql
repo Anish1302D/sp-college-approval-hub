@@ -1,17 +1,71 @@
--- fn_record_action — the single entry point for every approval decision.
+-- Add explicit SQLSTATE codes to the workflow functions.
 --
--- One call does all of it atomically: authority check, signature, the
--- approval_actions row, per-item decisions, item status updates, the
--- recomputed request status, and the audit log entry. Callers should never
--- write approval_actions by hand — doing it in separate statements is how a
--- request ends up half-decided when something fails midway.
+-- WHY
+-- These functions previously raised errors with plain messages, so an API
+-- wanting to map "not an approver" to HTTP 403 had to match on English text.
+-- That breaks the moment a message is reworded or translated. Every RAISE now
+-- carries a stable code the caller can switch on via err.code.
 --
--- p_item_decisions is a JSON array, one object per line item being decided:
---   [{"request_item_id": "...", "approved_quantity": 2,
---     "approved_amount": 20000, "remarks": "optional"}]
+-- Class "SP" is safe to claim: the SQL standard reserves classes beginning
+-- 0-4 and A-H for itself and leaves 5-9 and I-Z to implementations.
 --
--- Omitting it on an APPROVE approves every item in full. Omitting it on a
--- PARTIAL_APPROVE is an error — a partial approval has to say what was cut.
+--   SP001  request not found                      -> 404
+--   SP002  request not at a review stage          -> 409
+--   SP003  request already closed                 -> 409
+--   SP004  actor is not an approver at this stage -> 403
+--   SP005  action not valid at a review stage     -> 422
+--   SP006  final authority cannot escalate        -> 422
+--   SP007  rejection requires a reason            -> 422
+--   SP008  partial approval requires item decisions -> 422
+--   SP009  no stage exists above the current one  -> 409
+--   SP010  item decisions reference foreign items -> 422
+--   SP011  request is not in DRAFT                -> 409
+--   SP012  no routing rule matches the amount     -> 422
+--
+-- Behaviour is otherwise unchanged: same signatures, same logic, same
+-- messages. Only the error codes are new, so this is safe to apply to a
+-- database already holding live requests.
+
+BEGIN;
+
+CREATE OR REPLACE FUNCTION fn_submit_request(p_request_id UUID)
+RETURNS VOID AS $$
+DECLARE
+    v_amount NUMERIC(14,2);
+    v_stage  INTEGER;
+    v_status request_status;
+BEGIN
+    SELECT tentative_total_cost, current_status
+      INTO v_amount, v_status
+    FROM requests
+    WHERE request_id = p_request_id
+    FOR UPDATE;
+
+    IF v_status <> 'DRAFT' THEN
+        RAISE EXCEPTION 'Request % is not in DRAFT state (current=%)', p_request_id, v_status
+            USING ERRCODE = 'SP011';
+    END IF;
+
+    v_stage := fn_route_stage(v_amount);
+    IF v_stage IS NULL THEN
+        RAISE EXCEPTION 'No routing rule matches amount %', v_amount
+            USING ERRCODE = 'SP012';
+    END IF;
+
+    UPDATE requests
+       SET current_status   = fn_stage_status((SELECT code FROM workflow_stages WHERE stage_id = v_stage)),
+           current_stage_id = v_stage,
+           submitted_at     = COALESCE(submitted_at, NOW())
+     WHERE request_id = p_request_id;
+
+    INSERT INTO approval_actions (request_id, stage_id, performed_by, action,
+                                  previous_status, new_status,
+                                  amount_requested_snapshot)
+    SELECT p_request_id, v_stage, raised_by, 'SUBMIT',
+           'DRAFT', current_status, tentative_total_cost
+    FROM requests WHERE request_id = p_request_id;
+END;
+$$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_record_action(
     p_request_id        UUID,
@@ -232,3 +286,9 @@ BEGIN
     RETURN v_action_id;
 END;
 $$ LANGUAGE plpgsql;
+
+INSERT INTO schema_migrations (filename)
+VALUES ('20260902T193000_add_sqlstate_error_codes.sql')
+ON CONFLICT (filename) DO NOTHING;
+
+COMMIT;

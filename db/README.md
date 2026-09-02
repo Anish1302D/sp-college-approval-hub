@@ -120,6 +120,38 @@ the final authority tries to escalate, or when the request is already closed.
 the full requested quantity is `APPROVED`, anything between is
 `PARTIALLY_APPROVED`.
 
+### Error codes
+
+Every refusal raises a stable SQLSTATE so callers can branch on `err.code`
+rather than matching on message text. Class `SP` is safe to claim: the SQL
+standard reserves classes beginning `0`–`4` and `A`–`H` for itself and leaves
+`5`–`9` and `I`–`Z` to implementations.
+
+| Code | Meaning | Suggested HTTP |
+|---|---|---|
+| `SP001` | Request not found | 404 |
+| `SP002` | Request is not at a review stage | 409 |
+| `SP003` | Request is already closed | 409 |
+| `SP004` | Actor is not an approver at this stage | 403 |
+| `SP005` | Action not valid at a review stage | 422 |
+| `SP006` | Final authority cannot escalate | 422 |
+| `SP007` | Rejection requires a reason | 422 |
+| `SP008` | Partial approval requires item decisions | 422 |
+| `SP009` | No stage exists above the current one | 409 |
+| `SP010` | Item decisions reference another request's items | 422 |
+| `SP011` | Request is not in `DRAFT` | 409 |
+| `SP012` | No routing rule matches the amount | 422 |
+
+Two are defensive rather than reachable in normal operation:
+
+- **`SP009`** is shadowed by `SP006` — the only stage with nothing above it is
+  the one flagged `is_final`, so the escalate guard fires first. It would
+  surface only if a stage were configured as topmost without `is_final` set.
+- **`SP012`** requires `stage_routing_rules` to have a gap. The seeded rules
+  span 0 to unbounded, so it catches a misconfigured routing table.
+
+The other ten are covered by tests.
+
 ## Row-Level Security
 
 Policies are active on `requests`, `request_items`, `approval_actions`,

@@ -49,12 +49,14 @@ BEGIN
     FOR UPDATE;
 
     IF v_status <> 'DRAFT' THEN
-        RAISE EXCEPTION 'Request % is not in DRAFT state (current=%)', p_request_id, v_status;
+        RAISE EXCEPTION 'Request % is not in DRAFT state (current=%)', p_request_id, v_status
+            USING ERRCODE = 'SP011';
     END IF;
 
     v_stage := fn_route_stage(v_amount);
     IF v_stage IS NULL THEN
-        RAISE EXCEPTION 'No routing rule matches amount %', v_amount;
+        RAISE EXCEPTION 'No routing rule matches amount %', v_amount
+            USING ERRCODE = 'SP012';
     END IF;
 
     UPDATE requests

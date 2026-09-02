@@ -324,6 +324,7 @@
       <div class="fact"><b>10</b><span>Phases</span></div>
       <div class="fact"><b>38</b><span>Endpoints</span></div>
       <div class="fact"><b>0</b><span>ORM layers</span></div>
+      <div class="fact"><b>1</b><span>Phase complete</span></div>
       <div class="fact"><b>1</b><span>Blocking question</span></div>
     </div>
   </header>
@@ -668,32 +669,49 @@ npm install --save-dev nodemon vitest supertest</pre>
         status codes without leaking internals.
       </p>
 
-      <div class="warn">
-        <p class="label">Schema change worth making first</p>
+      <div class="decision">
+        <p class="verdict">Done — migration applied and verified</p>
+        <h4>Error codes are in class <code>SP</code>, not <code>AP</code></h4>
         <p>
-          <code>fn_record_action</code> currently raises errors as plain messages, so the API would
-          have to match on English text — brittle, and it breaks the moment a message is reworded.
-          Add explicit SQLSTATE codes to each <code>RAISE</code>
-          (<code>RAISE EXCEPTION '...' USING ERRCODE = 'AP001'</code>) and map on
-          <code>err.code</code> instead. Class <code>AP</code> is free for application use. This is a
-          small migration and should happen before the API is written against it.
+          Every <code>RAISE</code> in <code>fn_record_action</code> and
+          <code>fn_submit_request</code> now carries an explicit SQLSTATE, so the API branches on
+          <code>err.code</code> rather than matching English message text.
+        </p>
+        <p>
+          An earlier draft of this plan proposed class <code>AP</code>. That was wrong: the SQL
+          standard reserves classes beginning <code>A</code>–<code>H</code> for itself and leaves
+          <code>5</code>–<code>9</code> and <code>I</code>–<code>Z</code> to implementations.
+          <code>SP</code> sits safely in that range.
         </p>
       </div>
 
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Condition</th><th>HTTP</th><th>Response</th></tr></thead>
+        <thead><tr><th>Code</th><th>Condition</th><th>HTTP</th><th>Response</th></tr></thead>
         <tbody>
-          <tr><td>Not an approver at this stage</td><td class="mono">403</td><td>You are not authorised to act on this request</td></tr>
-          <tr><td>Request already closed</td><td class="mono">409</td><td>This request has already been decided</td></tr>
-          <tr><td>Rejection with no reason</td><td class="mono">422</td><td>A reason is required to reject</td></tr>
-          <tr><td>Partial approval with no items</td><td class="mono">422</td><td>Select which items are approved</td></tr>
-          <tr><td>Final authority escalating</td><td class="mono">422</td><td>This is the final stage; it cannot be escalated</td></tr>
-          <tr><td>CHECK violation (<code>23514</code>)</td><td class="mono">422</td><td>Field-level message from the constraint name</td></tr>
-          <tr><td>FK violation (<code>23503</code>)</td><td class="mono">422</td><td>Referenced record does not exist</td></tr>
-          <tr><td>Unique violation (<code>23505</code>)</td><td class="mono">409</td><td>Already exists</td></tr>
-          <tr><td>RLS returns zero rows on a fetch by id</td><td class="mono">404</td><td>Not found — never "forbidden", which would confirm it exists</td></tr>
+          <tr><td class="mono">SP001</td><td>Request not found</td><td class="mono">404</td><td>Not found</td></tr>
+          <tr><td class="mono">SP002</td><td>Not at a review stage</td><td class="mono">409</td><td>This request has not been submitted yet</td></tr>
+          <tr><td class="mono">SP003</td><td>Already closed</td><td class="mono">409</td><td>This request has already been decided</td></tr>
+          <tr><td class="mono">SP004</td><td>Not an approver at this stage</td><td class="mono">403</td><td>You are not authorised to act on this request</td></tr>
+          <tr><td class="mono">SP005</td><td>Invalid action for a review stage</td><td class="mono">422</td><td>That action cannot be taken here</td></tr>
+          <tr><td class="mono">SP006</td><td>Final authority escalating</td><td class="mono">422</td><td>This is the final stage; it cannot be escalated</td></tr>
+          <tr><td class="mono">SP007</td><td>Rejection with no reason</td><td class="mono">422</td><td>A reason is required to reject</td></tr>
+          <tr><td class="mono">SP008</td><td>Partial approval with no items</td><td class="mono">422</td><td>Select which items are approved</td></tr>
+          <tr><td class="mono">SP009</td><td>No stage above current</td><td class="mono">409</td><td>Workflow misconfiguration</td></tr>
+          <tr><td class="mono">SP010</td><td>Items from another request</td><td class="mono">422</td><td>Invalid line items in decision</td></tr>
+          <tr><td class="mono">SP011</td><td>Not in DRAFT</td><td class="mono">409</td><td>This request has already been submitted</td></tr>
+          <tr><td class="mono">SP012</td><td>No routing rule matches</td><td class="mono">422</td><td>No approval route for this amount</td></tr>
+          <tr><td class="mono">23514</td><td>CHECK violation</td><td class="mono">422</td><td>Field message derived from the constraint name</td></tr>
+          <tr><td class="mono">23503</td><td>FK violation</td><td class="mono">422</td><td>Referenced record does not exist</td></tr>
+          <tr><td class="mono">23505</td><td>Unique violation</td><td class="mono">409</td><td>Already exists</td></tr>
+          <tr><td class="mono">—</td><td>RLS hides a row on fetch by id</td><td class="mono">404</td><td>Not found — never "forbidden", which would confirm it exists</td></tr>
         </tbody>
       </table></div>
+
+      <p>
+        <code>SP009</code> and <code>SP012</code> are defensive: the first is shadowed by
+        <code>SP006</code>, the second needs a gap in <code>stage_routing_rules</code>. Both guard
+        against misconfiguration rather than ordinary use. The other ten are covered by tests.
+      </p>
 
       <p>
         That last row matters. When RLS hides a request, returning <code>403</code> tells the caller
@@ -784,10 +802,10 @@ npm install --save-dev nodemon vitest supertest</pre>
           <p class="out">Ends with: <b>GET /health returns the database version</b></p>
         </div></div>
 
-        <div class="phase"><div class="n">1</div><div>
-          <h4>SQLSTATE codes</h4>
-          <p>Migration adding error codes to every <code>RAISE</code> in <code>fn_record_action</code>. Do this before writing code that depends on the messages.</p>
-          <p class="out">Ends with: <b>errors identifiable by code, not text</b></p>
+        <div class="phase" style="opacity:.72"><div class="n" style="color:var(--go)">1</div><div>
+          <h4>SQLSTATE codes &nbsp;<span style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--go);text-transform:uppercase;">✓ Complete</span></h4>
+          <p>Migration <code>20260902T193000_add_sqlstate_error_codes.sql</code> added codes <code>SP001</code>–<code>SP012</code> to every <code>RAISE</code> in <code>fn_record_action</code> and <code>fn_submit_request</code>.</p>
+          <p class="out">Delivered: <b>11 of 12 codes verified by test; 1 unreachable by design</b></p>
         </div></div>
 
         <div class="phase"><div class="n">2</div><div>
