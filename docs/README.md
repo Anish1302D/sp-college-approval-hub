@@ -1,5 +1,19 @@
 # Documentation
 
+Both pages are standalone HTML — open them directly in a browser. They fetch fonts
+(and, for the diagrams page, Mermaid) from CDN on first load, so an internet
+connection is needed the first time.
+
+## Backend Build Plan
+
+`ApprovalHub_Backend_Plan.html` — the plan for the API layer on top of the database:
+the stack decision and the reasoning against an ORM, the `withUser` primitive that
+makes Row-Level Security work, all 38 endpoints, error mapping, the mismatch between
+the current frontend and the multi-item data model, and a ten-phase build order.
+
+Read §2 before writing any data-access code — the `SET LOCAL` versus `SET` distinction
+there is the difference between working security and a user seeing someone else's data.
+
 ## Schema Plates
 
 `ApprovalHub_Schema_Plates.html` — the design reference for the database. Six diagrams
