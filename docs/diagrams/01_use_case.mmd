@@ -1,0 +1,89 @@
+%% Use Case Diagram — S.P. College Approval & Workflow Management System
+flowchart LR
+    subgraph Actors[" "]
+        direction TB
+        FAC(("Faculty /<br/>Head /<br/>Activity In-charge"))
+        PC(("Purchase<br/>Committee"))
+        PR(("Principal"))
+        CDC(("CDC Member<br/>Grant / Non-Grant"))
+        FA(("Chairman +<br/>Vice President"))
+        ADM(("Admin /<br/>Clerk"))
+    end
+
+    subgraph System["Approval & Workflow Management System"]
+        direction TB
+        UC1["Raise Financial Request"]
+        UC2["Add Multiple Budget Items"]
+        UC3["Attach Supporting Documents"]
+        UC4["Track Request Status"]
+        UC5["Raise Non-Financial Issue"]
+
+        UC6["Review Request"]
+        UC7["Approve Request"]
+        UC8["Partially Approve<br/>Items / Quantities"]
+        UC9["Reject Request"]
+        UC10["Escalate Request"]
+        UC11["Add Comment<br/>with Visibility Scope"]
+        UC12["Apply Digital Signature"]
+
+        UC13["Manage Inventory"]
+        UC14["Record Purchase Bill"]
+        UC15["Generate Reports / Exports"]
+        UC16["View Dashboard"]
+        UC17["Carry Forward to Next FY"]
+        UC18["Manage Users & Roles"]
+        UC19["Configure Budget Heads<br/>& Items"]
+        UC20["View Audit Trail"]
+    end
+
+    FAC --> UC1
+    FAC --> UC2
+    FAC --> UC3
+    FAC --> UC4
+    FAC --> UC5
+
+    PC --> UC6
+    PC --> UC7
+    PC --> UC8
+    PC --> UC9
+    PC --> UC10
+    PC --> UC11
+    PC --> UC12
+
+    PR --> UC6
+    PR --> UC7
+    PR --> UC8
+    PR --> UC9
+    PR --> UC10
+    PR --> UC11
+    PR --> UC12
+    PR --> UC16
+    PR --> UC15
+    PR --> UC17
+    PR --> UC20
+
+    CDC --> UC6
+    CDC --> UC7
+    CDC --> UC8
+    CDC --> UC9
+    CDC --> UC10
+    CDC --> UC11
+    CDC --> UC12
+
+    FA --> UC6
+    FA --> UC7
+    FA --> UC8
+    FA --> UC9
+    FA --> UC12
+
+    ADM --> UC13
+    ADM --> UC14
+    ADM --> UC15
+    ADM --> UC18
+    ADM --> UC19
+
+    UC1 -.->|includes| UC2
+    UC7 -.->|includes| UC12
+    UC8 -.->|includes| UC12
+    UC9 -.->|includes| UC12
+    UC10 -.->|extends| UC6

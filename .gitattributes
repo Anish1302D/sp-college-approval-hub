@@ -1,0 +1,14 @@
+# Normalise line endings so the repo behaves the same on Windows and Linux.
+* text=auto
+
+# These run inside the Postgres container. CRLF breaks the shebang
+# ("bad interpreter: /bin/bash^M") and can confuse psql, so force LF
+# regardless of the checkout platform.
+*.sh  text eol=lf
+*.sql text eol=lf
+
+# Binary — never touch.
+*.png  binary
+*.jpg  binary
+*.docx binary
+*.pdf  binary

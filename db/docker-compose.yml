@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: spc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: spc_approval
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpass
+    ports:
+      - "5433:5432"     # host 5433 -> container 5432, avoids clashing with the local install on 5432
+    volumes:
+      - spc_pgdata:/var/lib/postgresql/data
+      - ./schema:/sql/schema:ro
+      - ./seed:/sql/seed:ro
+      - ./docker/init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spc_approval"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: spc-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local
+      PGADMIN_DEFAULT_PASSWORD: devpass
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  spc_pgdata:

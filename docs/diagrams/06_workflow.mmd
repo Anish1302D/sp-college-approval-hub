@@ -1,0 +1,55 @@
+%% Approval Workflow — amount-based routing and escalation chain
+flowchart TD
+    START([Requester raises request<br/>Head / Activity In-charge]) --> ITEMS[Add budget items<br/>qty, unit cost, estimated total]
+    ITEMS --> TOTAL{{Tentative total computed}}
+    TOTAL --> ROUTE{Route by amount}
+
+    ROUTE -->|under 50,000| PC[Purchase Committee<br/>UNDER_PURCHASE_COMMITTEE_REVIEW]
+    ROUTE -->|50,000 to under 5 lakh| PRIN[Principal<br/>UNDER_PRINCIPAL_REVIEW]
+    ROUTE -->|5 lakh and above| CDC[CDC<br/>Grant + Non-Grant Members<br/>UNDER_CDC_REVIEW]
+
+    PC --> PCD{Decision}
+    PCD -->|Approve| APPROVED[APPROVED]
+    PCD -->|Partial Approve| PARTIAL[PARTIALLY_APPROVED]
+    PCD -->|Reject| REJECTED[REJECTED]
+    PCD -->|Escalate| PRIN
+
+    PRIN --> PRD{Decision}
+    PRD -->|Approve| APPROVED
+    PRD -->|Partial Approve| PARTIAL
+    PRD -->|Reject| REJECTED
+    PRD -->|Escalate| CDC
+
+    CDC --> CDCD{Decision}
+    CDCD -->|Approve| APPROVED
+    CDCD -->|Partial Approve| PARTIAL
+    CDCD -->|Reject| REJECTED
+    CDCD -->|Escalate| FA[Chairman + Vice President<br/>UNDER_FINAL_AUTHORITY_REVIEW]
+
+    FA --> FAD{Decision - final}
+    FAD -->|Approve| APPROVED
+    FAD -->|Partial Approve| PARTIAL
+    FAD -->|Reject| REJECTED
+
+    APPROVED --> FUL[FULFILMENT_PENDING]
+    PARTIAL --> FUL
+    FUL --> BILL[Record purchase bill<br/>and inventory entry]
+    BILL --> DONE[FULFILLED then CLOSED]
+
+    REJECTED --> NOTIFY[Notify requester<br/>with reason and signature]
+
+    FUL -.->|FY ends unfinished| CF[CARRIED_FORWARD<br/>new FY request linked<br/>original preserved]
+
+    subgraph SIDE[At every decision]
+        direction TB
+        S1[Digital signature]
+        S2[Comment with visibility scope]
+        S3[approval_actions row]
+        S4[Notification to next stage]
+        S5[audit_logs entry]
+    end
+
+    PCD -.-> SIDE
+    PRD -.-> SIDE
+    CDCD -.-> SIDE
+    FAD -.-> SIDE

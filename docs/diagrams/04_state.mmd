@@ -1,0 +1,55 @@
+%% State Diagram — lifecycle of a single financial request
+stateDiagram-v2
+    [*] --> DRAFT : created by requester
+
+    DRAFT --> SUBMITTED : submit()
+    DRAFT --> [*] : discard
+
+    state "UNDER_PURCHASE_COMMITTEE_REVIEW" as PC
+    state "UNDER_PRINCIPAL_REVIEW" as PR
+    state "UNDER_CDC_REVIEW" as CDC
+    state "UNDER_FINAL_AUTHORITY_REVIEW" as FA
+
+    SUBMITTED --> PC : under 50,000
+    SUBMITTED --> PR : 50,000 to under 5 lakh
+    SUBMITTED --> CDC : 5 lakh and above
+
+    PC --> APPROVED : approve
+    PC --> PARTIALLY_APPROVED : partial approve
+    PC --> REJECTED : reject
+    PC --> PR : escalate
+
+    PR --> APPROVED : approve
+    PR --> PARTIALLY_APPROVED : partial approve
+    PR --> REJECTED : reject
+    PR --> CDC : escalate
+
+    CDC --> APPROVED : approve
+    CDC --> PARTIALLY_APPROVED : partial approve
+    CDC --> REJECTED : reject
+    CDC --> FA : escalate
+
+    FA --> APPROVED : approve
+    FA --> PARTIALLY_APPROVED : partial approve
+    FA --> REJECTED : reject
+    note right of FA
+        Final authority.
+        No further escalation.
+    end note
+
+    APPROVED --> FULFILMENT_PENDING : initiate procurement
+    PARTIALLY_APPROVED --> FULFILMENT_PENDING : initiate procurement
+
+    FULFILMENT_PENDING --> FULFILLED : goods received, bill recorded
+    FULFILLED --> CLOSED : close request
+
+    PC --> CARRIED_FORWARD : FY ends unfinished
+    PR --> CARRIED_FORWARD : FY ends unfinished
+    CDC --> CARRIED_FORWARD : FY ends unfinished
+    FA --> CARRIED_FORWARD : FY ends unfinished
+    FULFILMENT_PENDING --> CARRIED_FORWARD : FY ends unfinished
+
+    CARRIED_FORWARD --> [*] : original preserved, new FY request linked
+
+    REJECTED --> [*]
+    CLOSED --> [*]

@@ -1,0 +1,61 @@
+%% Sequence Diagram — a ₹5L+ request escalating all the way to Final Authority
+sequenceDiagram
+    autonumber
+    actor H as Head / Activity In-charge
+    participant UI as Web App
+    participant API as Backend API
+    participant WE as Workflow Engine
+    participant DB as PostgreSQL
+    participant NS as Notification Service
+    actor P as Principal
+    actor C as CDC (Grant + Non-Grant)
+    actor F as Chairman + VP
+
+    H->>UI: Fill request, add budget items
+    UI->>API: POST /requests (items[], budget_head, FY)
+    API->>DB: INSERT requests + request_items
+    Note over DB: CHECK requested_quantity > 0
+    API-->>UI: 201 request_number REQ-1024 (DRAFT)
+
+    H->>UI: Submit
+    UI->>API: POST /requests/REQ-1024/submit
+    API->>WE: routeStage(total = ₹6,00,000)
+    WE->>DB: SELECT fn_route_stage(600000)
+    DB-->>WE: stage = CDC
+    WE->>DB: UPDATE status = UNDER_CDC_REVIEW
+    WE->>DB: INSERT approval_actions (SUBMIT)
+    WE->>NS: notify(stage = CDC)
+    NS->>DB: INSERT notifications
+    NS--)C: Email / in-app alert
+
+    C->>UI: Open REQ-1024, review items
+    C->>UI: Comment "Grant budget unavailable"
+    UI->>API: POST /requests/REQ-1024/comments (visibility = UP_CHAIN)
+    API->>DB: INSERT comments
+    Note over DB: Visible to CDC and above,<br/>not to Purchase Committee or Head
+
+    C->>UI: Escalate
+    UI->>API: POST /requests/REQ-1024/actions (ESCALATE)
+    API->>WE: escalate(request, actor)
+    WE->>DB: INSERT approval_actions (ESCALATE) + digital_signatures
+    WE->>DB: UPDATE status = UNDER_FINAL_AUTHORITY_REVIEW
+    WE->>NS: notify(stage = FINAL_AUTHORITY)
+    NS--)F: Email / in-app alert
+
+    F->>UI: Approve 3 of 5 items, ₹2,50,000 of ₹6,00,000
+    UI->>API: POST /requests/REQ-1024/actions (PARTIAL_APPROVE, decisions[])
+    API->>WE: applyPartialApproval(request, decisions)
+    WE->>DB: INSERT approval_actions + approval_action_items
+    Note over DB: requested_quantity untouched,<br/>approved_quantity and approved_amount written
+    WE->>DB: UPDATE request_items.item_status
+    WE->>DB: UPDATE requests SET status = PARTIALLY_APPROVED,<br/>sanctioned_amount = 250000
+    WE->>DB: INSERT audit_logs
+    WE->>NS: notify(requester + Principal)
+    NS--)P: Decision recorded
+    NS--)H: "Partially approved — ₹2,50,000 sanctioned"
+
+    H->>UI: View request timeline
+    UI->>API: GET /requests/REQ-1024/timeline
+    API->>DB: SELECT * FROM v_request_timeline
+    DB-->>API: Full chronological trail
+    API-->>UI: Timeline with signatures and amounts

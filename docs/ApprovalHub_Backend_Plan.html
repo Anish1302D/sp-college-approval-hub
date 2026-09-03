@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Backend Build Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --paper:      #EFF2F6;
+    --surface:    #FFFFFF;
+    --sunken:     #E7ECF2;
+    --ink:        #0E141B;
+    --ink-soft:   #3D4A59;
+    --ink-faint:  #6C7A8B;
+    --rule:       #C9D2DD;
+    --rule-soft:  #DFE5EC;
+    --blueprint:  #1F4E79;
+    --blueprint-2:#3A76AC;
+    --stamp:      #A93226;
+    --brass:      #8A6D22;
+    --go:         #1E6B4F;
+
+    --f-display: "IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif;
+    --f-body:    "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0C1116;
+      --surface:    #131A22;
+      --sunken:     #0F151B;
+      --ink:        #E6ECF3;
+      --ink-soft:   #AAB8C7;
+      --ink-faint:  #7C8B9C;
+      --rule:       #2A3641;
+      --rule-soft:  #1E2831;
+      --blueprint:  #7FB3E0;
+      --blueprint-2:#5C97CC;
+      --stamp:      #E0725F;
+      --brass:      #C7A44E;
+      --go:         #5FBF95;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0C1116;
+    --surface:    #131A22;
+    --sunken:     #0F151B;
+    --ink:        #E6ECF3;
+    --ink-soft:   #AAB8C7;
+    --ink-faint:  #7C8B9C;
+    --rule:       #2A3641;
+    --rule-soft:  #1E2831;
+    --blueprint:  #7FB3E0;
+    --blueprint-2:#5C97CC;
+    --stamp:      #E0725F;
+    --brass:      #C7A44E;
+    --go:         #5FBF95;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 0 20px 96px;
+  }
+  @media (min-width: 1080px) {
+    .shell {
+      grid-template-columns: 228px minmax(0, 1fr);
+      gap: 56px;
+      padding: 0 32px 120px;
+    }
+  }
+
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 26px;
+    margin-bottom: 44px;
+  }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--blueprint);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 6vw, 4.1rem);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.06rem;
+    color: var(--ink-soft);
+    margin: 0 0 34px;
+  }
+
+  .facts { display: flex; flex-wrap: wrap; border-top: 1px solid var(--rule); }
+  .fact {
+    flex: 1 1 130px;
+    padding: 16px 20px 14px;
+    border-right: 1px solid var(--rule);
+  }
+  .fact:first-child { padding-left: 0; }
+  .fact:last-child { border-right: none; }
+  .fact b {
+    display: block;
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.85rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--blueprint);
+  }
+  .fact span {
+    display: block;
+    margin-top: 7px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  nav.toc { display: none; }
+  @media (min-width: 1080px) {
+    nav.toc {
+      display: block; position: sticky; top: 28px; align-self: start;
+      max-height: calc(100vh - 56px); overflow-y: auto; padding-bottom: 40px;
+    }
+    nav.toc p {
+      font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.15em;
+      text-transform: uppercase; color: var(--ink-faint);
+      margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--rule);
+    }
+    nav.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    nav.toc a {
+      display: flex; gap: 10px; padding: 5px 0 5px 10px; margin-left: -12px;
+      font-family: var(--f-display); font-size: 0.9rem; color: var(--ink-soft);
+      text-decoration: none; border-left: 2px solid transparent;
+      transition: color .14s, border-color .14s;
+    }
+    nav.toc a:hover, nav.toc a:focus-visible { color: var(--blueprint); border-left-color: var(--blueprint); }
+    nav.toc a i { font-family: var(--f-mono); font-style: normal; font-size: 10px; color: var(--ink-faint); padding-top: 3px; min-width: 22px; }
+  }
+
+  main { min-width: 0; }
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+
+  h2 {
+    font-family: var(--f-display); font-weight: 600;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    letter-spacing: -0.012em; line-height: 1.12;
+    text-wrap: balance; margin: 0 0 8px;
+  }
+
+  h3 {
+    font-family: var(--f-display); font-weight: 600;
+    font-size: 1.08rem; margin: 30px 0 10px; color: var(--ink);
+  }
+
+  .sec-num {
+    font-family: var(--f-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; color: var(--blueprint);
+    display: block; margin-bottom: 10px;
+  }
+
+  .lede { max-width: var(--measure); color: var(--ink-soft); margin: 0 0 26px; }
+  p { margin: 0 0 16px; max-width: var(--measure); }
+  ul, ol { max-width: var(--measure); padding-left: 20px; margin: 0 0 16px; }
+  li { margin-bottom: 7px; color: var(--ink-soft); }
+  li strong { color: var(--ink); font-weight: 500; }
+
+  code {
+    font-family: var(--f-mono); font-size: 0.85em;
+    background: var(--sunken); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: 1px 5px; color: var(--blueprint);
+  }
+
+  pre.code {
+    font-family: var(--f-mono); font-size: 0.8rem; line-height: 1.7;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 2px solid var(--blueprint);
+    padding: 16px 18px; overflow-x: auto; margin: 0 0 20px;
+    color: var(--ink-soft); white-space: pre;
+  }
+  pre.code .c { color: var(--ink-faint); font-style: italic; }
+  pre.code .k { color: var(--blueprint); font-weight: 500; }
+  pre.code .s { color: var(--brass); }
+
+  /* decision callout */
+  .decision {
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--blueprint);
+    background: var(--surface);
+    padding: 20px 22px;
+    margin: 0 0 26px;
+  }
+  .decision .verdict {
+    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--blueprint); margin: 0 0 8px;
+  }
+  .decision h4 {
+    font-family: var(--f-display); font-weight: 600; font-size: 1.2rem;
+    margin: 0 0 10px; color: var(--ink);
+  }
+  .decision p:last-child { margin-bottom: 0; }
+
+  .warn {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--stamp);
+    background: var(--surface);
+    padding: 18px 20px; margin: 0 0 24px;
+  }
+  .warn .label {
+    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--stamp); margin: 0 0 8px;
+  }
+  .warn p:last-child { margin-bottom: 0; }
+
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); margin-bottom: 22px; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; background: var(--surface); font-size: 0.88rem; }
+  th {
+    text-align: left; font-family: var(--f-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint);
+    padding: 11px 15px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  td { padding: 10px 15px; border-bottom: 1px solid var(--rule-soft); color: var(--ink-soft); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: var(--f-mono); font-size: 0.79rem; color: var(--blueprint); white-space: nowrap; }
+  td.verb { font-family: var(--f-mono); font-size: 0.74rem; font-weight: 600; white-space: nowrap; }
+  .get  { color: var(--blueprint-2); }
+  .post { color: var(--go); }
+  .patch{ color: var(--brass); }
+  .del  { color: var(--stamp); }
+
+  /* phase list */
+  .phases { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .phase { background: var(--surface); padding: 18px 22px; display: grid; grid-template-columns: 44px 1fr; gap: 18px; }
+  .phase .n {
+    font-family: var(--f-mono); font-size: 1.5rem; font-weight: 600;
+    color: var(--blueprint); line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .phase h4 { font-family: var(--f-display); font-weight: 600; font-size: 1.05rem; margin: 0 0 6px; color: var(--ink); }
+  .phase p { margin: 0 0 6px; font-size: 0.93rem; max-width: none; }
+  .phase .out {
+    font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.06em;
+    color: var(--ink-faint); text-transform: uppercase;
+  }
+  .phase .out b { color: var(--go); font-weight: 500; }
+
+  .tree {
+    font-family: var(--f-mono); font-size: 0.79rem; line-height: 1.85;
+    background: var(--surface); border: 1px solid var(--rule);
+    padding: 18px 20px; overflow-x: auto; margin: 0 0 22px;
+    color: var(--ink-soft); white-space: pre;
+  }
+  .tree b { color: var(--blueprint); font-weight: 500; }
+  .tree i { color: var(--ink-faint); font-style: normal; }
+
+  footer {
+    grid-column: 1 / -1; border-top: 2px solid var(--ink); padding-top: 20px;
+    font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--ink-faint);
+    display: flex; flex-wrap: wrap; gap: 8px 28px;
+  }
+
+  a { color: var(--blueprint); }
+  :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">S.P. College · Approval Hub · Stage 2</p>
+    <h1>Backend<br>Build Plan</h1>
+    <p class="standfirst">
+      The database is finished and verified. This is the plan for the API that sits on top of it —
+      the stack decision and why, the one primitive that makes Row-Level Security work, the endpoint
+      surface, and the order to build it in.
+    </p>
+    <div class="facts">
+      <div class="fact"><b>10</b><span>Phases</span></div>
+      <div class="fact"><b>38</b><span>Endpoints</span></div>
+      <div class="fact"><b>0</b><span>ORM layers</span></div>
+      <div class="fact"><b>1</b><span>Phase complete</span></div>
+      <div class="fact"><b>1</b><span>Blocking question</span></div>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#stack"><i>§1</i>Stack decision</a></li>
+      <li><a href="#rls"><i>§2</i>The RLS primitive</a></li>
+      <li><a href="#structure"><i>§3</i>Project structure</a></li>
+      <li><a href="#auth"><i>§4</i>Authentication</a></li>
+      <li><a href="#api"><i>§5</i>Endpoint surface</a></li>
+      <li><a href="#errors"><i>§6</i>Error handling</a></li>
+      <li><a href="#files"><i>§7</i>File uploads</a></li>
+      <li><a href="#frontend"><i>§8</i>Frontend gap</a></li>
+      <li><a href="#phases"><i>§9</i>Build order</a></li>
+      <li><a href="#deploy"><i>§10</i>Deployment</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 1. STACK -->
+    <section id="stack">
+      <span class="sec-num">§1 — Foundation</span>
+      <h2>Stack decision</h2>
+      <p class="lede">
+        The database is not a passive store. It holds the workflow engine, the routing rules,
+        the audit triggers and the security policies. That single fact drives every choice below.
+      </p>
+
+      <div class="decision">
+        <p class="verdict">Recommended</p>
+        <h4>Node + Express + <code>pg</code> — no ORM</h4>
+        <p>
+          Plain <code>express</code> for routing, the <code>pg</code> driver for data access,
+          <code>zod</code> for input validation, <code>jsonwebtoken</code> for sessions.
+          JavaScript, not TypeScript — matching the existing frontend.
+        </p>
+      </div>
+
+      <h3>Why not Prisma</h3>
+      <p>
+        Prisma is the obvious default coming from Supabase, and it is the wrong tool here.
+        Four concrete reasons:
+      </p>
+      <ul>
+        <li><strong>It cannot model what you built.</strong> <code>fn_record_action</code>, the
+          <code>sanctioned_amount</code> trigger, the RLS policies, the composite foreign keys and
+          the five views have no representation in a Prisma schema. You would reach past Prisma
+          with <code>$queryRaw</code> for the parts that matter most.</li>
+        <li><strong>Prisma Migrate would fight your schema.</strong> It wants to own the DDL. Your
+          DDL is hand-authored and already correct. Introspecting it produces a lossy model that
+          drops exactly the constraints and functions worth keeping.</li>
+        <li><strong>RLS needs a session variable per transaction.</strong> That pattern is native
+          with a <code>pg</code> client and awkward through Prisma's connection abstraction.</li>
+        <li><strong>Its main benefit is redundant.</strong> Prisma sells type safety and migrations.
+          You are writing JavaScript, and you already have a migration workflow.</li>
+      </ul>
+      <p>
+        Without the ORM the API becomes thin, which is the goal: <em>the business logic lives in
+        the database, and the API is transport plus authentication.</em> An approval endpoint is
+        one function call, not fifty lines of orchestration you would have to keep correct.
+      </p>
+
+      <h3>Dependencies</h3>
+      <pre class="code"><span class="c"># in a new server/ workspace</span>
+npm init -y
+npm install express pg jsonwebtoken zod cors helmet multer dotenv
+npm install --save-dev nodemon vitest supertest</pre>
+    </section>
+
+    <!-- 2. RLS -->
+    <section id="rls">
+      <span class="sec-num">§2 — The critical piece</span>
+      <h2>The RLS primitive</h2>
+      <p class="lede">
+        Everything in the API funnels through one helper. Get this right and security is
+        automatic; get it wrong and either every query returns nothing, or worse, one user
+        sees another's requests.
+      </p>
+
+      <p>
+        Three rules the database already enforces, which the API must respect:
+      </p>
+      <ul>
+        <li>Connect as <code>app_user</code>. Connecting as <code>postgres</code> silently disables
+          every policy, because superusers bypass RLS.</li>
+        <li>Set <code>app.user_id</code> inside a transaction, with <code>SET LOCAL</code>.</li>
+        <li>With no user set, policies evaluate false and queries return zero rows. It fails closed.</li>
+      </ul>
+
+      <div class="warn">
+        <p class="label">Why SET LOCAL, not SET</p>
+        <p>
+          Connections come from a pool and are reused. A plain <code>SET</code> persists on the
+          connection after your request finishes, so the <em>next</em> request to borrow that
+          connection inherits the previous user's identity. <code>SET LOCAL</code> is scoped to the
+          transaction and is discarded on commit. This distinction is the whole ballgame.
+        </p>
+      </div>
+
+      <h3>db.js</h3>
+      <pre class="code"><span class="k">import</span> pg <span class="k">from</span> <span class="s">'pg'</span>;
+
+<span class="k">const</span> pool = <span class="k">new</span> pg.Pool({
+  connectionString: process.env.DATABASE_URL, <span class="c">// app_user, never postgres</span>
+  max: 10,
+});
+
+<span class="c">// Runs fn inside a transaction that carries the caller's identity, so every</span>
+<span class="c">// statement is filtered by the RLS policies. Commits on success, rolls back</span>
+<span class="c">// on any throw, and always returns the client to the pool.</span>
+<span class="k">export async function</span> withUser(userId, fn) {
+  <span class="k">const</span> client = <span class="k">await</span> pool.connect();
+  <span class="k">try</span> {
+    <span class="k">await</span> client.query(<span class="s">'BEGIN'</span>);
+    <span class="c">// Parameterised: never interpolate a uuid into SQL text.</span>
+    <span class="k">await</span> client.query(<span class="s">'SELECT set_config($1, $2, true)'</span>,
+                       [<span class="s">'app.user_id'</span>, userId]);
+    <span class="k">const</span> result = <span class="k">await</span> fn(client);
+    <span class="k">await</span> client.query(<span class="s">'COMMIT'</span>);
+    <span class="k">return</span> result;
+  } <span class="k">catch</span> (err) {
+    <span class="k">await</span> client.query(<span class="s">'ROLLBACK'</span>);
+    <span class="k">throw</span> err;
+  } <span class="k">finally</span> {
+    client.release();
+  }
+}
+
+<span class="c">// For login only — runs with no identity set, so it can only touch</span>
+<span class="c">// tables without RLS (users, roles).</span>
+<span class="k">export async function</span> anonQuery(text, params) {
+  <span class="k">return</span> pool.query(text, params);
+}</pre>
+
+      <p>
+        <code>set_config($1, $2, true)</code> is the parameterised equivalent of
+        <code>SET LOCAL</code> — the third argument means transaction-scoped. Use it rather than
+        string-concatenating a UUID into a <code>SET LOCAL</code> statement.
+      </p>
+
+      <h3>Every route looks like this</h3>
+      <pre class="code">app.get(<span class="s">'/api/requests'</span>, requireAuth, <span class="k">async</span> (req, res, next) => {
+  <span class="k">try</span> {
+    <span class="k">const</span> rows = <span class="k">await</span> withUser(req.user.id, <span class="k">async</span> (db) => {
+      <span class="k">const</span> { rows } = <span class="k">await</span> db.query(
+        <span class="s">'SELECT * FROM v_pending_requests ORDER BY days_pending DESC'</span>);
+      <span class="k">return</span> rows;
+    });
+    res.json(rows); <span class="c">// already filtered to what this user may see</span>
+  } <span class="k">catch</span> (err) { next(err); }
+});</pre>
+      <p>
+        There is no <code>WHERE raised_by = ...</code> anywhere in the API. The policies do it.
+        That is the payoff for having built RLS.
+      </p>
+    </section>
+
+    <!-- 3. STRUCTURE -->
+    <section id="structure">
+      <span class="sec-num">§3 — Layout</span>
+      <h2>Project structure</h2>
+      <p class="lede">
+        A <code>server/</code> folder beside the existing frontend, with its own
+        <code>package.json</code>. Keeping them separate means the frontend build stays untouched.
+      </p>
+
+      <div class="tree">sp-college-approval-hub/
+├── <b>src/</b>                  <i># existing React frontend</i>
+├── <b>db/</b>                   <i># schema, seed, migrations (done)</i>
+└── <b>server/</b>
+    ├── package.json
+    ├── .env.example        <i># DATABASE_URL, JWT_SECRET, PORT, UPLOAD_DIR</i>
+    ├── src/
+    │   ├── index.js        <i># express app, middleware, listen</i>
+    │   ├── db.js           <i># pool, withUser, anonQuery</i>
+    │   ├── middleware/
+    │   │   ├── auth.js     <i># requireAuth, requireRole</i>
+    │   │   └── errors.js   <i># pg error to HTTP mapping</i>
+    │   ├── routes/
+    │   │   ├── auth.js
+    │   │   ├── requests.js <i># the big one</i>
+    │   │   ├── comments.js
+    │   │   ├── attachments.js
+    │   │   ├── issues.js
+    │   │   ├── inventory.js
+    │   │   ├── master.js   <i># budget heads, items, FYs, departments</i>
+    │   │   └── reports.js
+    │   └── schemas/        <i># zod input validation, one per route file</i>
+    └── tests/</div>
+    </section>
+
+    <!-- 4. AUTH -->
+    <section id="auth">
+      <span class="sec-num">§4 — Identity</span>
+      <h2>Authentication</h2>
+      <p class="lede">
+        Password hashes already live in <code>users.password_hash</code>, written by pgcrypto's
+        <code>crypt()</code>. Verification happens in the database, so no bcrypt library is needed.
+      </p>
+
+      <h3>Login</h3>
+      <pre class="code"><span class="c">// crypt(candidate, stored_hash) == stored_hash is bcrypt verification.</span>
+<span class="c">// Runs anonymously because RLS is not yet applicable — no user set.</span>
+<span class="k">const</span> { rows } = <span class="k">await</span> anonQuery(`
+  SELECT u.user_id, u.full_name, u.email,
+         ARRAY(SELECT r.code FROM user_roles ur
+                JOIN roles r ON r.role_id = ur.role_id
+               WHERE ur.user_id = u.user_id) AS roles
+    FROM users u
+   WHERE u.email = $1
+     AND u.is_active
+     AND u.password_hash = crypt($2, u.password_hash)`,
+  [email, password]);</pre>
+
+      <p>
+        On success, sign a JWT carrying <code>user_id</code> and the role codes, expiring in a few
+        hours. <code>requireAuth</code> verifies it and populates <code>req.user</code>;
+        <code>withUser(req.user.id, ...)</code> does the rest.
+      </p>
+
+      <div class="warn">
+        <p class="label">Do not trust roles from the token for authority</p>
+        <p>
+          Roles in the JWT are fine for showing and hiding UI. They must never be the basis for
+          allowing an approval. Authority is checked inside <code>fn_record_action</code> against
+          <code>stage_approvers</code> — a forged or stale token cannot get past it. Keep it that way.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. API -->
+    <section id="api">
+      <span class="sec-num">§5 — Surface</span>
+      <h2>Endpoint surface</h2>
+      <p class="lede">
+        Thirty-eight endpoints. The ones that matter are <code>submit</code> and
+        <code>actions</code> — everything else is reading, drafting, or supporting material.
+      </p>
+
+      <h3>Auth and identity</h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="verb post">POST</td><td class="mono">/api/auth/login</td><td>Returns JWT plus user and role codes</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/auth/logout</td><td>Client discards token; server-side no-op unless a denylist is added</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/me</td><td>Current user, roles, and stages they staff</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Master data — read-only, unblocks every form</h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="verb get">GET</td><td class="mono">/api/budget-heads</td><td>Includes <code>head_type</code></td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/budget-heads/:id/items</td><td>Items with <code>item_type</code>, auto-fills classification</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/financial-years</td><td>Active year flagged</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/departments</td><td></td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/courses</td><td>Filterable by department</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/workflow/stages</td><td>Stages plus routing thresholds, so the UI can preview the path</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Requests — the core</h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="verb get">GET</td><td class="mono">/api/requests</td><td>Filters: status, financial year, stage, mine. RLS scopes it</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests</td><td>Creates DRAFT with line items in one transaction</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/requests/:id</td><td>Request, items, summary counts</td></tr>
+          <tr><td class="verb patch">PATCH</td><td class="mono">/api/requests/:id</td><td>DRAFT only</td></tr>
+          <tr><td class="verb del">DELETE</td><td class="mono">/api/requests/:id</td><td>DRAFT only</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests/:id/items</td><td>Add a line item</td></tr>
+          <tr><td class="verb patch">PATCH</td><td class="mono">/api/requests/:id/items/:itemId</td><td>DRAFT only</td></tr>
+          <tr><td class="verb del">DELETE</td><td class="mono">/api/requests/:id/items/:itemId</td><td>DRAFT only</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests/:id/submit</td><td><code>fn_submit_request</code> — routes by amount</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests/:id/actions</td><td><code>fn_record_action</code> — approve, partial, reject, escalate</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/requests/:id/timeline</td><td><code>v_request_timeline</code></td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests/:id/carry-forward</td><td><code>fn_carry_forward_request</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <p>
+        The approval endpoint is the entire reason the database was built this way:
+      </p>
+      <pre class="code">router.post(<span class="s">'/:id/actions'</span>, requireAuth, <span class="k">async</span> (req, res, next) => {
+  <span class="k">const</span> body = actionSchema.parse(req.body);
+  <span class="k">try</span> {
+    <span class="k">const</span> actionId = <span class="k">await</span> withUser(req.user.id, <span class="k">async</span> (db) => {
+      <span class="k">const</span> { rows } = <span class="k">await</span> db.query(
+        <span class="s">'SELECT fn_record_action($1,$2,$3,$4,$5,$6,$7) AS action_id'</span>,
+        [req.params.id, req.user.id, body.action,
+         body.itemDecisions ?? <span class="k">null</span>, body.comments ?? <span class="k">null</span>,
+         body.rejectionReason ?? <span class="k">null</span>, body.signatureHash ?? <span class="k">null</span>]);
+      <span class="k">return</span> rows[0].action_id;
+    });
+    res.status(201).json({ actionId });
+  } <span class="k">catch</span> (err) { next(err); }
+});</pre>
+      <p>
+        Authority checking, signature, item decisions, status recomputation and the audit entry all
+        happen inside that one call, atomically. There is nothing for the API to get wrong.
+      </p>
+
+      <h3>Comments, attachments, issues, inventory, reports</h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="verb get">GET</td><td class="mono">/api/requests/:id/comments</td><td>RLS applies the visibility rule automatically</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests/:id/comments</td><td>Body carries <code>visibility</code></td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/requests/:id/attachments</td><td>Multipart; file to disk, metadata to DB</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/attachments/:id</td><td>Streams the file after an RLS visibility check</td></tr>
+          <tr><td class="verb del">DELETE</td><td class="mono">/api/attachments/:id</td><td>Uploader or admin only</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/issues</td><td>Non-financial queue</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/issues</td><td></td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/issues/:id</td><td>With event history</td></tr>
+          <tr><td class="verb patch">PATCH</td><td class="mono">/api/issues/:id</td><td>Assign, resolve, escalate</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/issues/:id/events</td><td>Comment or status note</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/inventory</td><td></td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/inventory</td><td></td></tr>
+          <tr><td class="verb patch">PATCH</td><td class="mono">/api/inventory/:id</td><td></td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/purchase-bills</td><td></td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/purchase-bills</td><td>Links a bill to its request</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/dashboard</td><td><code>v_dashboard_by_fy</code>, filtered by year</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/reports/pending</td><td><code>v_pending_gt_3_days</code> — the attention panel</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/exports/requests.csv</td><td>Streamed CSV</td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/notifications</td><td>Own only, by RLS</td></tr>
+          <tr><td class="verb post">POST</td><td class="mono">/api/notifications/:id/read</td><td></td></tr>
+          <tr><td class="verb get">GET</td><td class="mono">/api/audit</td><td>Admin only</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 6. ERRORS -->
+    <section id="errors">
+      <span class="sec-num">§6 — Failure</span>
+      <h2>Error handling</h2>
+      <p class="lede">
+        The database raises rich, specific errors. The API's job is to turn them into correct HTTP
+        status codes without leaking internals.
+      </p>
+
+      <div class="decision">
+        <p class="verdict">Done — migration applied and verified</p>
+        <h4>Error codes are in class <code>SP</code>, not <code>AP</code></h4>
+        <p>
+          Every <code>RAISE</code> in <code>fn_record_action</code> and
+          <code>fn_submit_request</code> now carries an explicit SQLSTATE, so the API branches on
+          <code>err.code</code> rather than matching English message text.
+        </p>
+        <p>
+          An earlier draft of this plan proposed class <code>AP</code>. That was wrong: the SQL
+          standard reserves classes beginning <code>A</code>–<code>H</code> for itself and leaves
+          <code>5</code>–<code>9</code> and <code>I</code>–<code>Z</code> to implementations.
+          <code>SP</code> sits safely in that range.
+        </p>
+      </div>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Code</th><th>Condition</th><th>HTTP</th><th>Response</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">SP001</td><td>Request not found</td><td class="mono">404</td><td>Not found</td></tr>
+          <tr><td class="mono">SP002</td><td>Not at a review stage</td><td class="mono">409</td><td>This request has not been submitted yet</td></tr>
+          <tr><td class="mono">SP003</td><td>Already closed</td><td class="mono">409</td><td>This request has already been decided</td></tr>
+          <tr><td class="mono">SP004</td><td>Not an approver at this stage</td><td class="mono">403</td><td>You are not authorised to act on this request</td></tr>
+          <tr><td class="mono">SP005</td><td>Invalid action for a review stage</td><td class="mono">422</td><td>That action cannot be taken here</td></tr>
+          <tr><td class="mono">SP006</td><td>Final authority escalating</td><td class="mono">422</td><td>This is the final stage; it cannot be escalated</td></tr>
+          <tr><td class="mono">SP007</td><td>Rejection with no reason</td><td class="mono">422</td><td>A reason is required to reject</td></tr>
+          <tr><td class="mono">SP008</td><td>Partial approval with no items</td><td class="mono">422</td><td>Select which items are approved</td></tr>
+          <tr><td class="mono">SP009</td><td>No stage above current</td><td class="mono">409</td><td>Workflow misconfiguration</td></tr>
+          <tr><td class="mono">SP010</td><td>Items from another request</td><td class="mono">422</td><td>Invalid line items in decision</td></tr>
+          <tr><td class="mono">SP011</td><td>Not in DRAFT</td><td class="mono">409</td><td>This request has already been submitted</td></tr>
+          <tr><td class="mono">SP012</td><td>No routing rule matches</td><td class="mono">422</td><td>No approval route for this amount</td></tr>
+          <tr><td class="mono">23514</td><td>CHECK violation</td><td class="mono">422</td><td>Field message derived from the constraint name</td></tr>
+          <tr><td class="mono">23503</td><td>FK violation</td><td class="mono">422</td><td>Referenced record does not exist</td></tr>
+          <tr><td class="mono">23505</td><td>Unique violation</td><td class="mono">409</td><td>Already exists</td></tr>
+          <tr><td class="mono">—</td><td>RLS hides a row on fetch by id</td><td class="mono">404</td><td>Not found — never "forbidden", which would confirm it exists</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>
+        <code>SP009</code> and <code>SP012</code> are defensive: the first is shadowed by
+        <code>SP006</code>, the second needs a gap in <code>stage_routing_rules</code>. Both guard
+        against misconfiguration rather than ordinary use. The other ten are covered by tests.
+      </p>
+
+      <p>
+        That last row matters. When RLS hides a request, returning <code>403</code> tells the caller
+        the record exists and belongs to someone else. Return <code>404</code>.
+      </p>
+    </section>
+
+    <!-- 7. FILES -->
+    <section id="files">
+      <span class="sec-num">§7 — Attachments</span>
+      <h2>File uploads</h2>
+      <p class="lede">
+        The schema already decided this: payloads live outside the database, and
+        <code>attachments</code> stores only the pointer.
+      </p>
+      <ul>
+        <li><strong>Development and college server:</strong> <code>multer</code> writing to a disk
+          directory outside the repo, with <code>storage_path</code> holding the relative key.</li>
+        <li><strong>If it ever moves to cloud:</strong> swap the storage adapter for S3 or MinIO.
+          Nothing else changes, because only the adapter knows what a <code>storage_path</code> means.</li>
+        <li><strong>Validate on upload:</strong> cap size, allowlist MIME types (PDF, images, Word,
+          Excel), and generate the stored filename yourself. Never use the client's filename as a
+          path — that is how directory traversal happens.</li>
+        <li><strong>Downloads go through the API,</strong> never a static route. The handler checks
+          visibility first, then streams. A static folder would let anyone with a URL bypass RLS.</li>
+        <li><strong>Back it up with the database.</strong> A <code>pg_dump</code> without the upload
+          directory restores rows pointing at files that no longer exist.</li>
+      </ul>
+    </section>
+
+    <!-- 8. FRONTEND -->
+    <section id="frontend">
+      <span class="sec-num">§8 — Integration</span>
+      <h2>The frontend gap</h2>
+      <p class="lede">
+        Swapping <code>src/data/mock*.js</code> for API calls will not work as-is. The mock model
+        and the database model disagree in a way that requires real UI changes.
+      </p>
+
+      <div class="warn">
+        <p class="label">The mismatch</p>
+        <p>
+          Every mock request has a single <code>amount</code> and one <code>category</code>. The
+          database has a request with <em>many line items</em>, each with its own quantity, unit
+          cost, approved quantity and status. Partial approval — the feature the whole schema was
+          designed around — has nowhere to live in the current UI.
+        </p>
+      </div>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Mock field</th><th>Database</th><th>Work needed</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">id: "REQ-2026-0891"</td><td class="mono">request_number + uuid</td><td>Display the number, use the UUID in URLs</td></tr>
+          <tr><td class="mono">amount: 1250000</td><td class="mono">SUM(request_items)</td><td>New: line-item editor on the request form</td></tr>
+          <tr><td class="mono">category: "IT Infra"</td><td class="mono">budget_head + item</td><td>Two dependent dropdowns from master data</td></tr>
+          <tr><td class="mono">status: "Pending Approval"</td><td class="mono">14-value enum</td><td>Map enums to labels and badge colours</td></tr>
+          <tr><td class="mono">history: [...]</td><td class="mono">v_request_timeline</td><td>Shape is close; mostly a field rename</td></tr>
+          <tr><td class="mono">currentRole (string)</td><td class="mono">JWT + user_roles</td><td>Replace the role switcher with real login</td></tr>
+          <tr><td>—</td><td class="mono">approved_quantity</td><td>New: partial-approval decision UI</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>
+        Two screens need real design work rather than rewiring: the <strong>request form</strong>
+        (add, edit and total line items before submitting) and the <strong>approval screen</strong>
+        (approve some items, cut quantities on others, reject the rest). Budget accordingly — these
+        are the two places where the system's actual value shows up.
+      </p>
+      <p>
+        Everything else — dashboards, lists, timeline, notifications, inventory — is a
+        straightforward swap from mock arrays to <code>fetch</code> calls.
+      </p>
+    </section>
+
+    <!-- 9. PHASES -->
+    <section id="phases">
+      <span class="sec-num">§9 — Sequence</span>
+      <h2>Build order</h2>
+      <p class="lede">
+        Ordered so something is demonstrable early and the risky parts land while there is still
+        time to change course. Each phase ends with something you can actually show.
+      </p>
+
+      <div class="phases">
+        <div class="phase"><div class="n">0</div><div>
+          <h4>Scaffold</h4>
+          <p>Express app, <code>db.js</code> with <code>withUser</code>, health endpoint, <code>.env</code>, nodemon. Grant <code>app_user</code> a login password.</p>
+          <p class="out">Ends with: <b>GET /health returns the database version</b></p>
+        </div></div>
+
+        <div class="phase" style="opacity:.72"><div class="n" style="color:var(--go)">1</div><div>
+          <h4>SQLSTATE codes &nbsp;<span style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--go);text-transform:uppercase;">✓ Complete</span></h4>
+          <p>Migration <code>20260902T193000_add_sqlstate_error_codes.sql</code> added codes <code>SP001</code>–<code>SP012</code> to every <code>RAISE</code> in <code>fn_record_action</code> and <code>fn_submit_request</code>.</p>
+          <p class="out">Delivered: <b>11 of 12 codes verified by test; 1 unreachable by design</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">2</div><div>
+          <h4>Authentication</h4>
+          <p>Login against <code>crypt()</code>, JWT issue and verify, <code>requireAuth</code>, <code>GET /api/me</code>.</p>
+          <p class="out">Ends with: <b>log in as principal@spcollege.edu, get a token</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">3</div><div>
+          <h4>Master data</h4>
+          <p>Read-only endpoints for budget heads, items, financial years, departments, courses, stages. Small, quick, and unblocks every form.</p>
+          <p class="out">Ends with: <b>the request form can populate its dropdowns</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">4</div><div>
+          <h4>Requests and items</h4>
+          <p>List, create draft with items, read one, edit and delete while DRAFT. Zod validation mirroring the database constraints so errors arrive before the round trip.</p>
+          <p class="out">Ends with: <b>a multi-item draft request exists via API</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">5</div><div>
+          <h4>Submit and decide</h4>
+          <p>The two endpoints that matter: <code>submit</code> and <code>actions</code>. Thin wrappers over the database functions, plus the error mapping from phase 1.</p>
+          <p class="out">Ends with: <b>full escalation to Chairman over HTTP</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">6</div><div>
+          <h4>Timeline and comments</h4>
+          <p>Request timeline view, comment threads with visibility. Verify the hierarchy rule holds through the API, not just in SQL.</p>
+          <p class="out">Ends with: <b>a CDC comment invisible to the requester</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">7</div><div>
+          <h4>Attachments</h4>
+          <p>Multipart upload, validated and stored to disk; authorised streaming download.</p>
+          <p class="out">Ends with: <b>a quotation PDF attached and retrieved</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">8</div><div>
+          <h4>Dashboards and reports</h4>
+          <p>Dashboard counters, pending-over-three-days, CSV export. Mostly thin reads over the existing views.</p>
+          <p class="out">Ends with: <b>the Principal dashboard has real numbers</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">9</div><div>
+          <h4>Remaining modules</h4>
+          <p>Non-financial issues, inventory, purchase bills, notifications. Conventional CRUD with RLS already handling scope.</p>
+          <p class="out">Ends with: <b>every screen has an endpoint behind it</b></p>
+        </div></div>
+
+        <div class="phase"><div class="n">10</div><div>
+          <h4>Frontend integration</h4>
+          <p>Replace <code>AppContext</code> mock state with API calls, add real login, then build the two genuinely new screens from §8: the line-item form and the partial-approval panel.</p>
+          <p class="out">Ends with: <b>the system runs end to end</b></p>
+        </div></div>
+      </div>
+
+      <p style="margin-top:24px">
+        Phases 0 through 5 are the spine. If time runs short, a working spine with mock data on the
+        remaining screens demonstrates far more than ten half-built modules.
+      </p>
+    </section>
+
+    <!-- 10. DEPLOY -->
+    <section id="deploy">
+      <span class="sec-num">§10 — Delivery</span>
+      <h2>Deployment</h2>
+      <p class="lede">
+        Unchanged from the database plan, with the API added as a second service.
+      </p>
+      <ul>
+        <li><strong>PostgreSQL</strong> as a service on the college server, schema loaded from
+          <code>db/run_all.sql</code>, then migrations from there on. Skip
+          <code>seed/03</code> or reset every password it creates.</li>
+        <li><strong>API</strong> as a Node process kept alive by <code>pm2</code> on Linux or
+          <code>nssm</code> on Windows, listening on localhost only.</li>
+        <li><strong>Frontend</strong> built with <code>npm run build</code> and served as static
+          files by nginx or IIS, which also reverse-proxies <code>/api</code> to the Node process.</li>
+        <li><strong>Secrets</strong> in a <code>.env</code> that is never committed —
+          <code>DATABASE_URL</code> and <code>JWT_SECRET</code> at minimum. Commit
+          <code>.env.example</code> with the keys and no values.</li>
+        <li><strong>Backups:</strong> nightly <code>pg_dump -Fc</code> plus the upload directory,
+          kept off the same disk. Test a restore before you rely on it.</li>
+        <li><strong>HTTPS</strong> before any real login crosses the network. A JWT over plain HTTP
+          on a shared college network is a credential anyone can read.</li>
+      </ul>
+    </section>
+
+    <section id="open">
+      <span class="sec-num">§11 — Blocked</span>
+      <h2>Still needs an answer</h2>
+      <p class="lede">
+        One question from earlier is still open and affects the master-data endpoints in phase 3.
+      </p>
+      <div class="warn">
+        <p class="label">Ask Madhuri Mam</p>
+        <p>
+          Does <code>budget_heads.head_type</code> (<code>REVENUE</code>/<code>CAPITAL</code>)
+          <em>replace</em> <code>budget_items.item_type</code>
+          (<code>CONSUMABLE</code>/<code>CAPITAL</code>/<code>REVENUE</code>), or sit alongside it?
+          Both currently exist. If it replaces, the item-level column and its API field should go
+          before the frontend is built against them — cheap now, a migration and a UI change later.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <span>S.P. College Approval Hub</span>
+    <span>Stage 2 — Backend</span>
+    <span>Branch: Database/everything</span>
+    <span>Database verified, API not yet started</span>
+  </footer>
+
+</div>
+
+</body>
+</html>
