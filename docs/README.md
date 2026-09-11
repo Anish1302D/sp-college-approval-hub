@@ -4,6 +4,16 @@ Both pages are standalone HTML — open them directly in a browser. They fetch f
 (and, for the diagrams page, Mermaid) from CDN on first load, so an internet
 connection is needed the first time.
 
+## No-Reply Mail Plan
+
+`ApprovalHub_Mail_Plan.html` — how the system sends email: the no-reply sender and
+its headers, the outbox and worker that keep mail from ever blocking or contradicting
+an approval, recipient rules, all 29 templates from the Master Email Workflow
+document checked against what the system can trigger today, provider and DNS setup,
+and the decisions still needed.
+
+Read §3 first: it lists where the email document and the built system disagree.
+
 ## Backend Build Plan
 
 `ApprovalHub_Backend_Plan.html` — the plan for the API layer on top of the database:
