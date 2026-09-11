@@ -1,7 +1,13 @@
 -- Reporting / dashboard views. Read-only convenience layer over base tables.
+--
+-- Every view is security_invoker. By default a Postgres view reads its base
+-- tables with the privileges of the view's OWNER — here the superuser, which
+-- bypasses Row-Level Security. Without this option any user querying a view
+-- would see every request in the college, including other people's drafts.
 
 -- Every open request with the age (days since submission).
-CREATE OR REPLACE VIEW v_pending_requests AS
+CREATE OR REPLACE VIEW v_pending_requests
+    WITH (security_invoker = true) AS
 SELECT
     r.request_id,
     r.request_number,
@@ -28,13 +34,15 @@ LEFT JOIN workflow_stages ws    ON ws.stage_id = r.current_stage_id
 WHERE r.current_status NOT IN ('APPROVED','REJECTED','FULFILLED','CLOSED','CARRIED_FORWARD');
 
 -- "Pending intelligence" — anything sitting untouched for more than 3 days.
-CREATE OR REPLACE VIEW v_pending_gt_3_days AS
+CREATE OR REPLACE VIEW v_pending_gt_3_days
+    WITH (security_invoker = true) AS
 SELECT *
 FROM v_pending_requests
 WHERE days_pending > 3;
 
 -- Dashboard counters by financial year.
-CREATE OR REPLACE VIEW v_dashboard_by_fy AS
+CREATE OR REPLACE VIEW v_dashboard_by_fy
+    WITH (security_invoker = true) AS
 SELECT
     r.financial_year_id,
     fy.label AS financial_year,
@@ -57,7 +65,8 @@ LEFT JOIN financial_years fy ON fy.financial_year_id = r.financial_year_id
 GROUP BY r.financial_year_id, fy.label;
 
 -- Timeline for a single request: chronological approval actions.
-CREATE OR REPLACE VIEW v_request_timeline AS
+CREATE OR REPLACE VIEW v_request_timeline
+    WITH (security_invoker = true) AS
 SELECT
     a.action_id,
     a.request_id,
@@ -81,7 +90,8 @@ JOIN users u                 ON u.user_id = a.performed_by
 ORDER BY a.request_id, a.created_at;
 
 -- Roll-up of item-level decisions for a request.
-CREATE OR REPLACE VIEW v_request_items_summary AS
+CREATE OR REPLACE VIEW v_request_items_summary
+    WITH (security_invoker = true) AS
 SELECT
     ri.request_id,
     COUNT(*)                                                       AS total_items,

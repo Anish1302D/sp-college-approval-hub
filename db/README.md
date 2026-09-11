@@ -45,7 +45,7 @@ docker compose up -d
 First start:
 - Postgres 16 starts with an empty volume.
 - `docker/init.sh` auto-runs every file in `schema/` then `seed/`.
-- pgAdmin comes up at http://localhost:5050 (login `admin@local` / `devpass`).
+- pgAdmin comes up at http://localhost:5050 (login `admin@example.com` / `devpass`).
 
 Connect pgAdmin to the DB using host `postgres`, port `5432`, user `postgres`, password `devpass`.
 
@@ -84,6 +84,9 @@ docker exec -i spc-postgres psql -U postgres -d spc_approval < db/run_all.sql
 | `12_functions.sql`   | `fn_route_stage`, `fn_stage_status`, `fn_next_stage`, `fn_submit_request`, `fn_carry_forward_request` |
 | `13_record_action.sql` | `fn_record_action` — the approval decision engine |
 | `14_rls.sql`         | Row-Level Security policies and the `app_user` role |
+| `15_numbering.sql`   | Sequence-backed `REQ-2026-0001` / `ISS-0001` numbers |
+| `16_notifications.sql` | Triggers that create notifications on status changes |
+| `17_schema_migrations.sql` | Records which migrations a fresh build already includes |
 
 ## Recording a decision
 
@@ -141,6 +144,13 @@ standard reserves classes beginning `0`–`4` and `A`–`H` for itself and leave
 | `SP010` | Item decisions reference another request's items | 422 |
 | `SP011` | Request is not in `DRAFT` | 409 |
 | `SP012` | No routing rule matches the amount | 422 |
+| `SP013` | Actor does not match the authenticated session user | 403 |
+| `SP014` | Request's status cannot be carried forward | 409 |
+| `SP015` | Carry-forward target year is not later than the current one | 422 |
+
+`SP004` is also raised when the caller can *read* a request but not act on it —
+an approver the request has moved past, or the Principal looking at a request
+sitting with CDC — rather than misleadingly reporting it as not found.
 
 Two are defensive rather than reachable in normal operation:
 
@@ -150,12 +160,28 @@ Two are defensive rather than reachable in normal operation:
 - **`SP012`** requires `stage_routing_rules` to have a gap. The seeded rules
   span 0 to unbounded, so it catches a misconfigured routing table.
 
-The other ten are covered by tests.
+The rest are covered by tests.
 
 ## Row-Level Security
 
 Policies are active on `requests`, `request_items`, `approval_actions`,
 `comments`, `notifications`, `attachments`, `issues` and `audit_logs`.
+
+Who sees what:
+
+| Who | Sees |
+|---|---|
+| Requester | Their own requests, drafts included, and everything attached to them |
+| Approver | Requests at a stage they are staffed at, or that passed through it |
+| Principal | Every submitted request in the college (read-only); drafts stay private |
+| Admin | Everything |
+| No identity set | Nothing |
+
+Reading is not writing: the Principal's read-all access is granted through
+`SELECT`-only policies, so it never becomes permission to edit.
+
+All views are `security_invoker`. A view otherwise reads with its **owner's**
+privileges — the superuser — and would show every row to everyone.
 
 The application must connect as `app_user` — **not** `postgres`, which is a
 superuser and bypasses RLS entirely — and identify the caller per transaction:
@@ -173,6 +199,18 @@ Give the role a login before deploying:
 ```sql
 ALTER ROLE app_user LOGIN PASSWORD '<choose one>';
 ```
+
+### Testing RLS
+
+```bash
+psql -U postgres -d spc_approval -f db/tests/rls_app_user.sql
+```
+
+**Never test security as `postgres`.** Superusers bypass RLS, so a test run as
+`postgres` passes no matter how broken the policies are — which is exactly how
+the defects fixed in migration `20260911T120000` went unnoticed. This test
+switches to `app_user`, acts as each seeded person in turn, and asserts 45
+things they can and cannot do. It runs in one transaction and rolls back.
 
 ## Seed data
 

@@ -83,7 +83,35 @@ CREATE OR REPLACE FUNCTION fn_carry_forward_request(
 ) RETURNS UUID AS $$
 DECLARE
     v_new_id UUID;
+    v_src    requests%ROWTYPE;
 BEGIN
+    -- Same rule as fn_record_action: the recorded actor must be the session user.
+    IF app_current_user_id() IS NOT NULL
+       AND p_actor_id IS DISTINCT FROM app_current_user_id() THEN
+        RAISE EXCEPTION 'Actor % does not match the authenticated user', p_actor_id
+            USING ERRCODE = 'SP013';
+    END IF;
+
+    SELECT * INTO v_src FROM requests WHERE request_id = p_request_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Request % not found', p_request_id
+            USING ERRCODE = 'SP001';
+    END IF;
+
+    -- Only unfinished work carries forward. A decided or already-moved request
+    -- has nothing left to continue.
+    IF v_src.current_status IN ('REJECTED','CLOSED','FULFILLED','CARRIED_FORWARD') THEN
+        RAISE EXCEPTION 'Request % cannot be carried forward (status = %)',
+            v_src.request_number, v_src.current_status
+            USING ERRCODE = 'SP014';
+    END IF;
+
+    IF (SELECT start_date FROM financial_years WHERE financial_year_id = p_new_fy_id)
+       <= (SELECT start_date FROM financial_years WHERE financial_year_id = v_src.financial_year_id) THEN
+        RAISE EXCEPTION 'Target financial year must be later than the request''s current year'
+            USING ERRCODE = 'SP015';
+    END IF;
+
     INSERT INTO requests (
         request_number, raised_by, department_id, course_id,
         financial_year_id, budget_head_id, title, description,

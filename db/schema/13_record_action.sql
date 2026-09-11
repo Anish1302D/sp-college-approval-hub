@@ -36,9 +36,29 @@ DECLARE
     v_rejected     INTEGER;
     v_decided      INTEGER;
 BEGIN
+    -- The authority check below tests p_actor_id against the approver list. If
+    -- that parameter could differ from the logged-in session, a requester could
+    -- pass an approver's id and approve their own request — every RLS policy
+    -- would pass, because they own the row. So when a session identity is set,
+    -- the actor must be that identity. (No identity is set for maintenance run
+    -- directly as a superuser, which RLS does not govern anyway.)
+    IF app_current_user_id() IS NOT NULL
+       AND p_actor_id IS DISTINCT FROM app_current_user_id() THEN
+        RAISE EXCEPTION 'Actor % does not match the authenticated user', p_actor_id
+            USING ERRCODE = 'SP013';
+    END IF;
+
     -- Lock the request so two approvers acting at once can't interleave.
     SELECT * INTO v_req FROM requests WHERE request_id = p_request_id FOR UPDATE;
     IF NOT FOUND THEN
+        -- Under RLS, FOR UPDATE sees only rows the caller may UPDATE. A caller
+        -- who can read the request but not act on it (an approver it has moved
+        -- past, or the Principal reading a CDC request) lands here too. Tell
+        -- them they lack authority rather than claiming the request is missing.
+        IF EXISTS (SELECT 1 FROM requests WHERE request_id = p_request_id) THEN
+            RAISE EXCEPTION 'User % is not an approver at the current stage of this request', p_actor_id
+                USING ERRCODE = 'SP004';
+        END IF;
         RAISE EXCEPTION 'Request % not found', p_request_id
             USING ERRCODE = 'SP001';
     END IF;
