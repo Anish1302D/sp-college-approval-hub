@@ -100,9 +100,13 @@ async function detail(db, issueId, user) {
   };
 }
 
+// clock_timestamp(), not the column's NOW() default: NOW() is fixed for the
+// whole transaction, so two events recorded in one update (assigned, then
+// moved to review) would tie, and the history would list them in random order.
 const addEvent = (db, issueId, userId, action, note = null) =>
   db.query(
-    'INSERT INTO issue_events (issue_id, actor_user_id, action, note) VALUES ($1, $2, $3, $4)',
+    `INSERT INTO issue_events (issue_id, actor_user_id, action, note, created_at)
+     VALUES ($1, $2, $3, $4, clock_timestamp())`,
     [issueId, userId, action, note],
   );
 

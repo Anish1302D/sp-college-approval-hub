@@ -95,6 +95,14 @@ test('escalating needs a target, and notifies them', async () => {
   expectStatus(await t.api('GET', `/api/issues/${issue.id}`, { token: chairman }), 200);
 });
 
+test('only issue managers can list people to assign to', async () => {
+  expectStatus(await t.api('GET', '/api/users', { token: tok.head }), 403);
+  const all = expectStatus(await t.api('GET', '/api/users', { token: tok.principal }), 200);
+  assert.ok(all.length >= 10);
+  const pc = expectStatus(await t.api('GET', '/api/users?role=purchase_committee', { token: tok.principal }), 200);
+  assert.deepEqual(pc.map((u) => u.email).sort(), ['pc1@spcollege.edu', 'pc2@spcollege.edu']);
+});
+
 test('lists are scoped', async () => {
   const mine = expectStatus(await t.api('GET', '/api/issues?mine=true', { token: tok.head }), 200);
   assert.deepEqual(mine.items.map((i) => i.id), [issueId]);

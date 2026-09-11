@@ -13,6 +13,7 @@ import { issuesRouter } from './routes/issues.js';
 import { masterRouter } from './routes/master.js';
 import { reportsRouter } from './routes/reports.js';
 import { requestsRouter } from './routes/requests.js';
+import { usersRouter } from './routes/users.js';
 
 export function createApp() {
   const app = express();
@@ -52,6 +53,7 @@ export function createApp() {
   api.use(attachmentsRouter);
   api.use(inventoryRouter);
   api.use(reportsRouter);
+  api.use(usersRouter);
   app.use('/api', api);
 
   app.use((req, _res, next) => next(new HttpError(404, `No route for ${req.method} ${req.path}`)));

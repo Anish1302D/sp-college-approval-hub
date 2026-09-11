@@ -39,7 +39,7 @@ reportsRouter.get('/dashboard', async (req, res) => {
   const body = await withUser(req.user.id, async (db) => {
     const year = await financialYear(db, financialYearId);
     const fy = year.id;
-    const [counts, attention, awaiting, recent] = await queryAll(db, [
+    const [counts, attention, awaiting, recent, higher] = await queryAll(db, [
       ['SELECT * FROM v_dashboard_by_fy WHERE financial_year_id = $1', [fy]],
       [`SELECT count(*)::int AS n FROM v_pending_gt_3_days
          WHERE financial_year_id = $1 AND current_status <> 'DRAFT'`, [fy]],
@@ -52,6 +52,11 @@ reportsRouter.get('/dashboard', async (req, res) => {
           FROM requests r LEFT JOIN workflow_stages ws ON ws.stage_id = r.current_stage_id
          WHERE r.financial_year_id = $1
          ORDER BY r.updated_at DESC LIMIT 5`, [fy]],
+      // The view's "escalated" counts a status the workflow never sets; what
+      // people mean by escalated is "with CDC or the final authority".
+      [`SELECT count(*)::int AS n FROM requests r
+         WHERE r.financial_year_id = $1
+           AND r.current_status IN ('UNDER_CDC_REVIEW', 'UNDER_FINAL_AUTHORITY_REVIEW')`, [fy]],
     ]);
     const c = counts.rows[0] ?? {};
     return {
@@ -63,7 +68,7 @@ reportsRouter.get('/dashboard', async (req, res) => {
         approved: c.approved ?? 0,
         partiallyApproved: c.partial ?? 0,
         rejected: c.rejected ?? 0,
-        escalated: c.escalated ?? 0,
+        withHigherAuthority: higher.rows[0].n,
         inFulfilment: c.fulfilment ?? 0,
         carriedForward: c.carried_forward ?? 0,
       },
@@ -81,6 +86,43 @@ reportsRouter.get('/dashboard', async (req, res) => {
     };
   });
 
+  res.json(body);
+});
+
+// Where the money went, by budget head, for the reports page. Scoped like
+// everything else: the Principal sees the college, a requester their own.
+const DECIDED_FOR = ['APPROVED', 'PARTIALLY_APPROVED', 'FULFILMENT_PENDING', 'FULFILLED', 'CLOSED'];
+
+reportsRouter.get('/reports/by-budget-head', async (req, res) => {
+  const { financialYearId } = z.object({ financialYearId: intId.optional() }).parse(req.query);
+  const body = await withUser(req.user.id, async (db) => {
+    const year = await financialYear(db, financialYearId);
+    const { rows } = await db.query(
+      `SELECT bh.budget_head_id, bh.name, bh.head_type,
+              count(*)::int AS requests,
+              count(*) FILTER (WHERE r.current_status::text = ANY($2::text[]))::int AS approved,
+              count(*) FILTER (WHERE r.current_status = 'REJECTED')::int AS rejected,
+              COALESCE(sum(r.tentative_total_cost), 0) AS requested,
+              COALESCE(sum(r.sanctioned_amount) FILTER (WHERE r.current_status::text = ANY($2::text[])), 0) AS sanctioned
+         FROM requests r
+         JOIN budget_heads bh ON bh.budget_head_id = r.budget_head_id
+        WHERE r.current_status <> 'DRAFT' AND r.financial_year_id = $1
+        GROUP BY bh.budget_head_id, bh.name, bh.head_type
+        ORDER BY requested DESC, bh.name`,
+      [year.id, DECIDED_FOR],
+    );
+    return {
+      financialYear: year.label,
+      rows: rows.map((r) => ({
+        budgetHead: { id: r.budget_head_id, name: r.name, headType: r.head_type },
+        requests: r.requests,
+        approved: r.approved,
+        rejected: r.rejected,
+        requested: r.requested,
+        sanctioned: r.sanctioned,
+      })),
+    };
+  });
   res.json(body);
 });
 

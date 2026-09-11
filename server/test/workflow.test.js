@@ -342,6 +342,26 @@ test('the Principal dashboard counts the college; a requester\'s counts their ow
   assert.deepEqual([i.counts.total, i.counts.approved], [1, 1]);
 });
 
+test('the dashboard counts requests sitting with CDC or the final authority', async () => {
+  // At this point the big request has been decided, so nothing is with them.
+  const p = expectStatus(await t.api('GET', '/api/dashboard', { token: tok.principal }), 200);
+  assert.equal(p.counts.withHigherAuthority, 0);
+  assert.equal('escalated' in p.counts, false, 'the never-set ESCALATED count is gone');
+});
+
+test('spending by budget head is scoped and counts only approved money', async () => {
+  const p = expectStatus(await t.api('GET', '/api/reports/by-budget-head', { token: tok.principal }), 200);
+  assert.equal(p.financialYear, '2026-27');
+  const it = p.rows.find((r) => r.budgetHead.name === 'IT Equipment');
+  const office = p.rows.find((r) => r.budgetHead.name === 'Office Expenses');
+  assert.deepEqual([it.requests, it.approved, it.requested, it.sanctioned], [1, 1, 650000.5, 300000.5]);
+  assert.deepEqual([office.approved, office.sanctioned], [1, 30000]);
+  assert.equal(it.budgetHead.headType, 'CAPITAL');
+
+  const incharge = expectStatus(await t.api('GET', '/api/reports/by-budget-head', { token: tok.incharge }), 200);
+  assert.deepEqual(incharge.rows.map((r) => r.budgetHead.name), ['Office Expenses']);
+});
+
 test('CSV export neutralises spreadsheet formulas', async () => {
   const evil = expectStatus(await t.api('POST', '/api/requests', {
     token: tok.head,
