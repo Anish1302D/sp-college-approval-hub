@@ -16,5 +16,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 INSERT INTO schema_migrations (filename) VALUES
     ('20260902T180000_baseline.sql'),
     ('20260902T193000_add_sqlstate_error_codes.sql'),
-    ('20260911T120000_backend_rls_fixes.sql')
+    ('20260911T120000_backend_rls_fixes.sql'),
+    ('20260912T090000_indian_number_format.sql')
 ON CONFLICT (filename) DO NOTHING;

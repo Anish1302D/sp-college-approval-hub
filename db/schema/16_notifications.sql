@@ -13,6 +13,34 @@
 -- delivering email is left to a worker that reads PENDING EMAIL rows.
 
 -- ---------------------------------------------------------------------------
+-- Money, written the way the college writes it
+-- ---------------------------------------------------------------------------
+-- Indian digit grouping: the last three digits, then twos.
+-- 650000.5 becomes ₹6,50,000.50, not ₹650,000.50. to_char() only knows
+-- three-digit grouping, so the head of the number is grouped here.
+CREATE OR REPLACE FUNCTION fn_inr(p_amount NUMERIC)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+    v_sign TEXT := CASE WHEN p_amount < 0 THEN '-' ELSE '' END;
+    v_text TEXT := to_char(round(abs(COALESCE(p_amount, 0)), 2), 'FM9999999999990.00');
+    v_int  TEXT := split_part(v_text, '.', 1);
+    v_frac TEXT := split_part(v_text, '.', 2);
+    v_head TEXT;
+BEGIN
+    IF length(v_int) <= 3 THEN
+        RETURN v_sign || '₹' || v_int || '.' || v_frac;
+    END IF;
+    -- Group everything before the final three digits in pairs, right to left.
+    v_head := reverse(regexp_replace(reverse(left(v_int, length(v_int) - 3)),
+                                     '(\d{2})(?=\d)', '\1,', 'g'));
+    RETURN v_sign || '₹' || v_head || ',' || right(v_int, 3) || '.' || v_frac;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Requests
 -- ---------------------------------------------------------------------------
 --   enters a review stage   -> every approver staffed at that stage
@@ -53,8 +81,8 @@ BEGIN
                 'Request ' || NEW.request_number || ' ' || v_label,
                 CASE
                     WHEN NEW.current_status IN ('APPROVED','PARTIALLY_APPROVED')
-                        THEN 'Sanctioned amount: ' || COALESCE(NEW.sanctioned_amount, 0)::TEXT
-                             || ' of ' || NEW.tentative_total_cost::TEXT || ' requested.'
+                        THEN 'Sanctioned ' || fn_inr(COALESCE(NEW.sanctioned_amount, 0))
+                             || ' of ' || fn_inr(NEW.tentative_total_cost) || ' requested.'
                     ELSE NEW.title
                 END);
     END IF;

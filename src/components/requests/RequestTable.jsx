@@ -23,9 +23,9 @@ export function useDebounced(value, ms = 300) {
  * (status, stage, mine, awaitingMe, q, financialYearId). Row-Level Security
  * has already narrowed them to what this person may see.
  */
-export const RequestTable = ({ query = {}, empty, showRaisedBy = true }) => {
+export const RequestTable = ({ query = {}, empty, showRaisedBy = true, pageSize = PAGE }) => {
   const { openRecord } = useApp();
-  const [limit, setLimit] = useState(PAGE);
+  const [limit, setLimit] = useState(pageSize);
   const path = `/api/requests${qs({ ...query, limit })}`;
   const state = useApi(path);
   const items = state.data?.items ?? [];
@@ -33,7 +33,7 @@ export const RequestTable = ({ query = {}, empty, showRaisedBy = true }) => {
 
   // A new filter starts from the first page again.
   const filterKey = JSON.stringify(query);
-  useEffect(() => setLimit(PAGE), [filterKey]);
+  useEffect(() => setLimit(pageSize), [filterKey, pageSize]);
 
   return (
     <DataState state={state} isEmpty={items.length === 0} empty={empty ?? { title: 'No requests here yet' }}>
@@ -80,7 +80,7 @@ export const RequestTable = ({ query = {}, empty, showRaisedBy = true }) => {
       <div className="flex items-center justify-between pt-3 text-[11px] text-gray-400">
         <span>Showing {items.length} of {total}</span>
         {items.length < total && (
-          <button onClick={() => setLimit((l) => l + PAGE)} className="font-semibold text-indigo-600 hover:underline">
+          <button onClick={() => setLimit((l) => l + pageSize)} className="font-semibold text-indigo-600 hover:underline">
             Show more
           </button>
         )}

@@ -1,51 +1,60 @@
 import React, { useState } from 'react';
+import { Box, Plus, Search } from 'lucide-react';
+import { qs } from '../api/client';
+import { date, quantity } from '../api/format';
 import { useApp } from '../context/AppContext';
+import { useApi } from '../hooks/useApi';
 import { StatusBadge } from '../components/ui/StatusBadge';
-import { Box, Plus, Search, Filter } from 'lucide-react';
+import { DataState } from '../components/ui/States';
+import { useDebounced } from '../components/requests/RequestTable';
 
 export const InventoryManagement = () => {
-  const { inventory, setIsInventoryModalOpen, searchQuery, setSearchQuery } = useApp();
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const filtered = inventory.filter(item => {
-    const matchesSearch = searchQuery === '' || item.itemName.toLowerCase().includes(searchQuery.toLowerCase()) || item.id.toLowerCase().includes(searchQuery.toLowerCase()) || item.location.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!matchesSearch) return false;
-    if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
-    return true;
-  });
-
-  const inputCls = "bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400";
+  const { user, openModal } = useApp();
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
+  const state = useApi(`/api/inventory${qs({ q, limit: 100 })}`);
+  const items = state.data?.items ?? [];
+  const canEdit = user.roles.includes('ADMIN');
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div><h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2"><Box className="w-5 h-5 text-indigo-500" /> Inventory Management</h2><p className="text-xs text-gray-500 mt-1">Asset register, quantities, location, and condition.</p></div>
-        <button onClick={() => setIsInventoryModalOpen(true)} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 transition-colors self-start"><Plus className="w-4 h-4" /> Add Asset</button>
-      </div>
-      <div className="bg-white rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 border border-gray-200">
-        <div className="flex items-center gap-2 flex-1 min-w-[200px]"><Search className="w-4 h-4 text-gray-400" /><input type="text" placeholder="Search assets..." className={`w-full ${inputCls}`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-        <div className="flex items-center gap-2"><Filter className="w-4 h-4 text-gray-400" /><select className={inputCls} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="all">All Categories</option><option value="IT Hardware">IT Hardware</option><option value="AV Equipment">AV Equipment</option><option value="Laboratory Equipment">Lab Equipment</option><option value="Furniture">Furniture</option><option value="Power & Electrical">Power</option></select></div>
-      </div>
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead><tr className="border-b border-gray-100 text-gray-400 font-semibold uppercase tracking-wider text-[11px] bg-gray-50/50"><th className="py-3 px-3">ID</th><th className="py-3 px-3">Item</th><th className="py-3 px-3">Category</th><th className="py-3 px-3">Location</th><th className="py-3 px-3">Qty</th><th className="py-3 px-3">Unit Cost</th><th className="py-3 px-3">Total</th><th className="py-3 px-3">Condition</th><th className="py-3 px-3">Bill</th></tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {filtered.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50/80">
-                  <td className="py-3 px-3 font-mono font-bold text-indigo-600">{item.id}</td>
-                  <td className="py-3 px-3 font-semibold text-gray-800">{item.itemName}</td>
-                  <td className="py-3 px-3 text-gray-500">{item.category}</td>
-                  <td className="py-3 px-3 text-gray-600">{item.location}</td>
-                  <td className="py-3 px-3 font-bold text-gray-900">{item.quantity}</td>
-                  <td className="py-3 px-3 text-gray-500">₹{item.unitValue.toLocaleString('en-IN')}</td>
-                  <td className="py-3 px-3 font-bold text-emerald-700">₹{item.totalValue.toLocaleString('en-IN')}</td>
-                  <td className="py-3 px-3"><StatusBadge status={item.condition} /></td>
-                  <td className="py-3 px-3 font-mono text-[11px] text-gray-400">{item.linkedBill}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2"><Box className="w-5 h-5 text-indigo-500" /> Inventory</h2>
+          <p className="text-xs text-gray-500 mt-1">What the college holds, where it is, and its condition.{canEdit ? '' : ' Only the administrator can change these records.'}</p>
         </div>
+        {canEdit && (
+          <button onClick={() => openModal('inventory')} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 self-start"><Plus className="w-4 h-4" /> Add item</button>
+        )}
+      </div>
+      <label className="bg-white rounded-xl p-3 flex items-center gap-2 border border-gray-200">
+        <Search className="w-4 h-4 text-gray-400" />
+        <input type="search" aria-label="Search inventory" placeholder="Search by item or location" value={search} onChange={(e) => setSearch(e.target.value)}
+          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+      </label>
+      <div className="bg-white rounded-2xl border border-gray-200 p-4">
+        <DataState state={state} isEmpty={items.length === 0} empty={{ title: q ? `Nothing matches “${q}”` : 'No inventory recorded yet' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead><tr className="border-b border-gray-100 text-gray-400 font-semibold uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-3">Item</th><th className="py-3 px-3 text-right">Quantity</th><th className="py-3 px-3">Condition</th>
+                <th className="py-3 px-3">Location</th><th className="py-3 px-3">Department</th><th className="py-3 px-3">Acquired</th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-50">
+                {items.map((i) => (
+                  <tr key={i.id}>
+                    <td className="py-3 px-3"><p className="font-semibold text-gray-800">{i.name}</p>{i.notes && <p className="text-[10px] text-gray-400 truncate max-w-xs">{i.notes}</p>}</td>
+                    <td className="py-3 px-3 text-right font-bold tabular-nums">{quantity(i.quantity)} {i.unit ?? ''}</td>
+                    <td className="py-3 px-3">{i.condition ? <StatusBadge status={i.condition} kind="condition" /> : '—'}</td>
+                    <td className="py-3 px-3 text-gray-600">{i.location ?? '—'}</td>
+                    <td className="py-3 px-3 text-gray-600">{i.department?.name ?? 'College-wide'}</td>
+                    <td className="py-3 px-3 text-gray-400">{date(i.acquiredOn)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DataState>
       </div>
     </div>
   );
