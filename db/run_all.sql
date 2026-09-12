@@ -18,6 +18,9 @@
 \i db/schema/12_functions.sql
 \i db/schema/13_record_action.sql
 \i db/schema/14_rls.sql
+\i db/schema/15_numbering.sql
+\i db/schema/16_notifications.sql
+\i db/schema/17_schema_migrations.sql
 
 \echo === Seed ===
 \i db/seed/01_roles_and_stages.sql

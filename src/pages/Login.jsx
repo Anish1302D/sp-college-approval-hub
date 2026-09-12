@@ -1,23 +1,48 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ArrowRight, Loader2, Lock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Shield, Building, UserCheck, ClipboardList, ArrowRight, Lock } from 'lucide-react';
+
+// Development only: the accounts from db/seed/03_users_and_approvers.sql.
+// `import.meta.env.DEV` is replaced with `false` in a production build, so
+// this whole list — seed password included — is removed from what ships.
+const DEMO = import.meta.env.DEV
+  ? {
+    password: 'ChangeMe#2026',
+    accounts: [
+      ['Head, Computer Science', 'head.cs@spcollege.edu'],
+      ['Activity In-charge', 'incharge@spcollege.edu'],
+      ['Purchase Committee', 'pc1@spcollege.edu'],
+      ['Principal', 'principal@spcollege.edu'],
+      ['CDC (Grant)', 'cdc.grant@spcollege.edu'],
+      ['Chairman', 'chairman@spcollege.edu'],
+      ['Administrator', 'admin@spcollege.edu'],
+    ],
+  }
+  : null;
 
 export const Login = () => {
-  const { switchRole } = useApp();
+  const { signIn, showToast } = useApp();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const roles = [
-    { id: 'principal', label: 'Principal Portal', desc: 'Review & approve bills (< ₹5L), resolve issues, escalate ≥ ₹5L.', icon: Shield, color: 'indigo' },
-    { id: 'sfsp', label: 'SFSP Trust Authority', desc: 'Governing board for escalated bills (≥ ₹5,00,000).', icon: Building, color: 'amber' },
-    { id: 'faculty', label: 'Faculty Portal', desc: 'Submit bill requisitions & non-financial issues.', icon: UserCheck, color: 'emerald' },
-    { id: 'admin', label: 'Admin / Clerk Ops', desc: 'Inventory management, purchase bills, exports.', icon: ClipboardList, color: 'violet' },
-  ];
-
-  const colorMap = {
-    indigo: { bg: 'bg-indigo-50', ring: 'border-indigo-200 hover:border-indigo-400', icon: 'text-indigo-600', text: 'text-indigo-600' },
-    amber: { bg: 'bg-amber-50', ring: 'border-amber-200 hover:border-amber-400', icon: 'text-amber-600', text: 'text-amber-600' },
-    emerald: { bg: 'bg-emerald-50', ring: 'border-emerald-200 hover:border-emerald-400', icon: 'text-emerald-600', text: 'text-emerald-600' },
-    violet: { bg: 'bg-violet-50', ring: 'border-violet-200 hover:border-violet-400', icon: 'text-violet-600', text: 'text-violet-600' },
+  const submit = async (e, as) => {
+    e?.preventDefault();
+    const creds = as ?? { email, password };
+    setBusy(true);
+    setError('');
+    try {
+      await signIn(creds.email.trim(), creds.password);
+    } catch (err) {
+      setError(err.status === 401 ? 'That email and password don\'t match an active account.' : err.message);
+      if (err.status !== 401) showToast(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-between p-6">
@@ -26,45 +51,55 @@ export const Login = () => {
           <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-extrabold text-base">SP</div>
           <div>
             <h1 className="text-base font-extrabold text-gray-900">S.P. College</h1>
-            <p className="text-[10px] text-gray-400 font-semibold tracking-widest uppercase">Approval & Workflow Management</p>
+            <p className="text-[10px] text-gray-400 font-semibold tracking-widest uppercase">Approval &amp; Workflow Management</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-400"><Lock className="w-3.5 h-3.5 text-gray-400" /> Institutional Access</div>
+        <div className="flex items-center gap-1.5 text-xs text-gray-400"><Lock className="w-3.5 h-3.5" /> Institutional access</div>
       </div>
 
-      <div className="max-w-4xl w-full mx-auto my-12">
-        <div className="text-center mb-10 space-y-2">
-          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200">Role-Based Access</span>
-          <h2 className="text-3xl font-extrabold text-gray-900">Select Your Portal</h2>
-          <p className="text-sm text-gray-500 max-w-xl mx-auto">Choose a role to explore the approval workflow prototype.</p>
+      <div className="w-full max-w-md mx-auto my-12 space-y-6">
+        <div className="text-center space-y-1.5">
+          <h2 className="text-2xl font-extrabold text-gray-900">Sign in</h2>
+          <p className="text-sm text-gray-500">Use your college email. What you see depends on your role.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {roles.map((role) => {
-            const Icon = role.icon;
-            const c = colorMap[role.color];
-            return (
-              <div key={role.id} onClick={() => switchRole(role.id)} className={`bg-white rounded-2xl p-5 cursor-pointer group border ${c.ring} transition-all duration-200 hover:shadow-md flex flex-col justify-between`}>
-                <div>
-                  <div className={`w-11 h-11 rounded-xl ${c.bg} flex items-center justify-center ${c.icon} mb-3 group-hover:scale-105 transition-transform`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-sm font-bold text-gray-900">{role.label}</h3>
-                  <p className="text-xs text-gray-500 mt-1">{role.desc}</p>
-                </div>
-                <div className={`mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-semibold ${c.text}`}>
-                  <span>Enter</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <form onSubmit={submit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Email</label>
+            <input id="email" type="email" autoComplete="username" required className={inputCls}
+              placeholder="name@spcollege.edu" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div>
+            <label htmlFor="password" className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5">Password</label>
+            <input id="password" type="password" autoComplete="current-password" required className={inputCls}
+              value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
+          <button type="submit" disabled={busy}
+            className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />} Sign in
+          </button>
+          <p className="text-[11px] text-gray-400 text-center">Forgotten your password? Ask the college administrator to reset it.</p>
+        </form>
+
+        {DEMO && (
+          <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 p-4 space-y-2">
+            <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">Development accounts — not in production builds</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DEMO.accounts.map(([label, address]) => (
+                <button key={address} disabled={busy} onClick={() => submit(null, { email: address, password: DEMO.password })}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-[11px] font-semibold text-gray-700 hover:border-amber-400 disabled:opacity-50">
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="max-w-6xl w-full mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 border-t border-gray-200 pt-4">
-        <p>© 2026 S.P. College Autonomous Institution</p>
-        <p>Frontend Prototype</p>
+        <p>© 2026 S.P. College</p>
+        <p>Approval Hub</p>
       </div>
     </div>
   );

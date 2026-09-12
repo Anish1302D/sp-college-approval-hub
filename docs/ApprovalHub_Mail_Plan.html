@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>No-Reply Mail Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --paper:      #EFF2F6;
+    --surface:    #FFFFFF;
+    --sunken:     #E7ECF2;
+    --ink:        #0E141B;
+    --ink-soft:   #3D4A59;
+    --ink-faint:  #6C7A8B;
+    --rule:       #C9D2DD;
+    --rule-soft:  #DFE5EC;
+    --blueprint:  #1F4E79;
+    --blueprint-2:#3A76AC;
+    --stamp:      #A93226;
+    --brass:      #8A6D22;
+    --go:         #1E6B4F;
+    --mail:       #FBFCFD;
+    --mail-ink:   #1B2530;
+
+    --f-display: "IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif;
+    --f-body:    "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-mono:    "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0C1116;
+      --surface:    #131A22;
+      --sunken:     #0F151B;
+      --ink:        #E6ECF3;
+      --ink-soft:   #AAB8C7;
+      --ink-faint:  #7C8B9C;
+      --rule:       #2A3641;
+      --rule-soft:  #1E2831;
+      --blueprint:  #7FB3E0;
+      --blueprint-2:#5C97CC;
+      --stamp:      #E0725F;
+      --brass:      #C7A44E;
+      --go:         #5FBF95;
+      --mail:       #182029;
+      --mail-ink:   #DCE4EC;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0C1116;
+    --surface:    #131A22;
+    --sunken:     #0F151B;
+    --ink:        #E6ECF3;
+    --ink-soft:   #AAB8C7;
+    --ink-faint:  #7C8B9C;
+    --rule:       #2A3641;
+    --rule-soft:  #1E2831;
+    --blueprint:  #7FB3E0;
+    --blueprint-2:#5C97CC;
+    --stamp:      #E0725F;
+    --brass:      #C7A44E;
+    --go:         #5FBF95;
+    --mail:       #182029;
+    --mail-ink:   #DCE4EC;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 0 20px 96px;
+  }
+  @media (min-width: 1080px) {
+    .shell {
+      grid-template-columns: 228px minmax(0, 1fr);
+      gap: 56px;
+      padding: 0 32px 120px;
+    }
+  }
+
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 26px;
+    margin-bottom: 44px;
+  }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--blueprint);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 6vw, 4.1rem);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.06rem;
+    color: var(--ink-soft);
+    margin: 0 0 34px;
+  }
+
+  .facts { display: flex; flex-wrap: wrap; border-top: 1px solid var(--rule); }
+  .fact {
+    flex: 1 1 130px;
+    padding: 16px 20px 14px;
+    border-right: 1px solid var(--rule);
+  }
+  .fact:first-child { padding-left: 0; }
+  .fact:last-child { border-right: none; }
+  .fact b {
+    display: block;
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.85rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--blueprint);
+  }
+  .fact.warn-fact b { color: var(--stamp); }
+  .fact.brass-fact b { color: var(--brass); }
+  .fact span {
+    display: block;
+    margin-top: 7px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  nav.toc { display: none; }
+  @media (min-width: 1080px) {
+    nav.toc {
+      display: block; position: sticky; top: 28px; align-self: start;
+      max-height: calc(100vh - 56px); overflow-y: auto; padding-bottom: 40px;
+    }
+    nav.toc p {
+      font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.15em;
+      text-transform: uppercase; color: var(--ink-faint);
+      margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--rule);
+    }
+    nav.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    nav.toc a {
+      display: flex; gap: 10px; padding: 5px 0 5px 10px; margin-left: -12px;
+      font-family: var(--f-display); font-size: 0.9rem; color: var(--ink-soft);
+      text-decoration: none; border-left: 2px solid transparent;
+      transition: color .14s, border-color .14s;
+    }
+    nav.toc a:hover, nav.toc a:focus-visible { color: var(--blueprint); border-left-color: var(--blueprint); }
+    nav.toc a i { font-family: var(--f-mono); font-style: normal; font-size: 10px; color: var(--ink-faint); padding-top: 3px; min-width: 26px; }
+  }
+
+  main { min-width: 0; }
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+
+  h2 {
+    font-family: var(--f-display); font-weight: 600;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    letter-spacing: -0.012em; line-height: 1.12;
+    text-wrap: balance; margin: 0 0 8px;
+  }
+
+  h3 {
+    font-family: var(--f-display); font-weight: 600;
+    font-size: 1.08rem; margin: 30px 0 10px; color: var(--ink);
+  }
+
+  .sec-num {
+    font-family: var(--f-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; color: var(--blueprint);
+    display: block; margin-bottom: 10px;
+  }
+
+  .lede { max-width: var(--measure); color: var(--ink-soft); margin: 0 0 26px; }
+  p { margin: 0 0 16px; max-width: var(--measure); }
+  ul, ol { max-width: var(--measure); padding-left: 20px; margin: 0 0 16px; }
+  li { margin-bottom: 7px; color: var(--ink-soft); }
+  li strong { color: var(--ink); font-weight: 500; }
+
+  code {
+    font-family: var(--f-mono); font-size: 0.85em;
+    background: var(--sunken); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: 1px 5px; color: var(--blueprint);
+  }
+
+  pre.code {
+    font-family: var(--f-mono); font-size: 0.8rem; line-height: 1.7;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 2px solid var(--blueprint);
+    padding: 16px 18px; overflow-x: auto; margin: 0 0 20px;
+    color: var(--ink-soft); white-space: pre;
+  }
+  pre.code .c { color: var(--ink-faint); font-style: italic; }
+  pre.code .k { color: var(--blueprint); font-weight: 500; }
+  pre.code .s { color: var(--brass); }
+
+  .decision {
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--blueprint);
+    background: var(--surface);
+    padding: 20px 22px;
+    margin: 0 0 26px;
+  }
+  .decision .verdict {
+    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--blueprint); margin: 0 0 8px;
+  }
+  .decision h4 {
+    font-family: var(--f-display); font-weight: 600; font-size: 1.2rem;
+    margin: 0 0 10px; color: var(--ink);
+  }
+  .decision p:last-child { margin-bottom: 0; }
+
+  .warn {
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--stamp);
+    background: var(--surface);
+    padding: 18px 20px; margin: 0 0 24px;
+  }
+  .warn .label {
+    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--stamp); margin: 0 0 8px;
+  }
+  .warn p:last-child { margin-bottom: 0; }
+
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); margin-bottom: 22px; }
+  table { border-collapse: collapse; width: 100%; min-width: 600px; background: var(--surface); font-size: 0.88rem; }
+  th {
+    text-align: left; font-family: var(--f-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint);
+    padding: 11px 15px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  td { padding: 10px 15px; border-bottom: 1px solid var(--rule-soft); color: var(--ink-soft); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: var(--f-mono); font-size: 0.76rem; color: var(--blueprint); white-space: nowrap; }
+  td.num { font-family: var(--f-mono); font-size: 0.76rem; color: var(--ink-faint); font-variant-numeric: tabular-nums; width: 1%; }
+
+  /* status chips: colour AND word, so status reads without colour */
+  .chip {
+    display: inline-block; white-space: nowrap;
+    font-family: var(--f-mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 2px; border: 1px solid currentColor;
+  }
+  .chip.ready   { color: var(--go); }
+  .chip.reword  { color: var(--blueprint-2); }
+  .chip.merge   { color: var(--ink-faint); }
+  .chip.decide  { color: var(--brass); }
+  .chip.blocked { color: var(--stamp); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 0 0 16px; font-size: 0.86rem; color: var(--ink-soft); }
+  .legend span { display: inline-flex; gap: 8px; align-items: baseline; }
+
+  /* the mail specimen */
+  .specimen {
+    border: 1px solid var(--rule);
+    background: var(--mail);
+    color: var(--mail-ink);
+    margin: 0 0 26px;
+    max-width: 760px;
+  }
+  .specimen .caption {
+    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--ink-faint);
+    padding: 10px 16px; border-bottom: 1px solid var(--rule-soft);
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  .headers {
+    font-family: var(--f-mono); font-size: 0.76rem; line-height: 1.75;
+    padding: 14px 16px; border-bottom: 1px dashed var(--rule);
+    overflow-x: auto;
+  }
+  .headers div { display: grid; grid-template-columns: 150px 1fr; gap: 12px; white-space: nowrap; }
+  .headers dt, .headers .h { color: var(--ink-faint); }
+  .headers .quiet { opacity: 0.72; }
+  .mailbody { padding: 20px 22px 22px; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 0.92rem; line-height: 1.55; }
+  .mailbody p { max-width: 60ch; margin: 0 0 12px; }
+  .mailbody dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 0 0 16px; font-size: 0.88rem; }
+  .mailbody dt { color: var(--ink-faint); }
+  .mailbody dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .mailbody .cta {
+    display: inline-block; background: var(--blueprint); color: var(--mail);
+    padding: 9px 16px; font-weight: 600; font-size: 0.86rem; text-decoration: none; border-radius: 3px;
+    margin: 4px 0 16px;
+  }
+  .mailbody .foot { font-size: 0.76rem; color: var(--ink-faint); border-top: 1px solid var(--rule-soft); padding-top: 12px; margin: 0; }
+
+  /* the pipeline: a real sequence, so it is numbered */
+  .pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 0 0 22px; }
+  .pipe div { background: var(--surface); padding: 14px 14px 16px; }
+  .pipe b { display: block; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.12em; color: var(--blueprint); margin-bottom: 6px; }
+  .pipe strong { display: block; font-family: var(--f-display); font-weight: 600; font-size: 0.98rem; color: var(--ink); margin-bottom: 4px; }
+  .pipe span { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.45; display: block; }
+  .pipe .txn { box-shadow: inset 0 3px 0 var(--go); }
+  .pipe .after { box-shadow: inset 0 3px 0 var(--brass); }
+
+  .conflicts { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 0 0 22px; }
+  .conflict { background: var(--surface); padding: 16px 20px; display: grid; grid-template-columns: 1fr; gap: 6px; }
+  @media (min-width: 760px) { .conflict { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; } }
+  .conflict h4 { grid-column: 1 / -1; font-family: var(--f-display); font-weight: 600; font-size: 1.02rem; margin: 0; color: var(--ink); }
+  .conflict .side { font-size: 0.9rem; color: var(--ink-soft); }
+  .conflict .side b { display: block; font-family: var(--f-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 3px; }
+  .conflict .side.rec b { color: var(--go); }
+
+  .phases { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .phase { background: var(--surface); padding: 18px 22px; display: grid; grid-template-columns: 44px 1fr; gap: 18px; }
+  .phase .n { font-family: var(--f-mono); font-size: 1.5rem; font-weight: 600; color: var(--blueprint); line-height: 1; font-variant-numeric: tabular-nums; }
+  .phase h4 { font-family: var(--f-display); font-weight: 600; font-size: 1.05rem; margin: 0 0 6px; color: var(--ink); }
+  .phase p { margin: 0 0 6px; font-size: 0.93rem; max-width: none; }
+  .phase .out { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.06em; color: var(--ink-faint); text-transform: uppercase; }
+  .phase .out b { color: var(--go); font-weight: 500; }
+
+  .questions { counter-reset: q; list-style: none; padding: 0; max-width: none; display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .questions li { counter-increment: q; background: var(--surface); margin: 0; padding: 14px 20px 14px 58px; position: relative; }
+  .questions li::before {
+    content: counter(q, upper-alpha); position: absolute; left: 20px; top: 13px;
+    font-family: var(--f-mono); font-weight: 600; color: var(--brass); font-size: 1.05rem;
+  }
+  .questions li strong { display: block; font-family: var(--f-display); font-weight: 600; font-size: 1rem; margin-bottom: 3px; }
+  .questions .affects { display: block; margin-top: 5px; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.05em; color: var(--ink-faint); }
+
+  footer {
+    grid-column: 1 / -1; border-top: 2px solid var(--ink); padding-top: 20px;
+    font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--ink-faint);
+    display: flex; flex-wrap: wrap; gap: 8px 28px;
+  }
+
+  a { color: var(--blueprint); }
+  :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">S.P. College · Approval Hub · Stage 3</p>
+    <h1>No-Reply<br>Mail Plan</h1>
+    <p class="standfirst">
+      How the approval system sends email: the no-reply sender, what goes out and to whom, and
+      how mail is sent without ever holding up or undoing an approval. This plan maps the
+      <em>Master Email Workflow</em> document onto the system as it is actually built, including
+      the places where the two disagree.
+    </p>
+    <div class="facts">
+      <div class="fact"><b>29</b><span>Templates in the document</span></div>
+      <div class="fact"><b>16</b><span>Buildable today</span></div>
+      <div class="fact brass-fact"><b>7</b><span>Decisions needed</span></div>
+      <div class="fact warn-fact"><b>4</b><span>Blocked on workflow</span></div>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#sender"><i>§1</i>The sender</a></li>
+      <li><a href="#outbox"><i>§2</i>Never send mid-approval</a></li>
+      <li><a href="#conflicts"><i>§3</i>Where the document and system disagree</a></li>
+      <li><a href="#coverage"><i>§4</i>Template coverage</a></li>
+      <li><a href="#recipients"><i>§5</i>Choosing recipients</a></li>
+      <li><a href="#templates"><i>§6</i>Writing the emails</a></li>
+      <li><a href="#provider"><i>§7</i>Mail provider and DNS</a></li>
+      <li><a href="#database"><i>§8</i>Database additions</a></li>
+      <li><a href="#worker"><i>§9</i>The mail worker</a></li>
+      <li><a href="#reminders"><i>§10</i>Reminders and overdue</a></li>
+      <li><a href="#config"><i>§11</i>Configuration</a></li>
+      <li><a href="#phases"><i>§12</i>Build order</a></li>
+      <li><a href="#questions"><i>§13</i>Decisions needed</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 1 -->
+    <section id="sender">
+      <span class="sec-num">§1 — Identity</span>
+      <h2>The sender</h2>
+      <p class="lede">
+        Every message comes from one no-reply address on the college's own domain. People can't
+        reply to it, but a reply someone sends anyway still reaches a person.
+      </p>
+
+      <div class="specimen" role="figure" aria-label="Example escalation email">
+        <div class="caption"><span>Specimen · CDC review required</span><span>Example from dev seed data</span></div>
+        <dl class="headers">
+          <div><dt>From</dt><dd>S.P. College Procurement &lt;no-reply@<em>college-domain</em>&gt;</dd></div>
+          <div><dt>Reply-To</dt><dd>procurement-help@<em>college-domain</em></dd></div>
+          <div><dt>To</dt><dd>P. Shinde (CDC Grant); N. Gokhale (CDC Non-Grant)</dd></div>
+          <div><dt>Cc</dt><dd>Dr. V. Rane (Principal)</dd></div>
+          <div><dt>Subject</dt><dd>[Escalation] REQ-2026-0001 — CDC Review Required — ₹6,50,000.50</dd></div>
+          <div class="quiet"><dt>Auto-Submitted</dt><dd>auto-generated</dd></div>
+          <div class="quiet"><dt>X-Auto-Response-Suppress</dt><dd>All</dd></div>
+          <div class="quiet"><dt>Message-ID</dt><dd>&lt;evt-1842.req-8f2c…@<em>college-domain</em>&gt;</dd></div>
+          <div class="quiet"><dt>References</dt><dd>&lt;req-8f2c…@<em>college-domain</em>&gt;</dd></div>
+        </dl>
+        <div class="mailbody">
+          <p>Dear CDC members,</p>
+          <p>Procurement request REQ-2026-0001 has been escalated by the Principal and requires CDC review.</p>
+          <dl>
+            <dt>Request</dt><dd>Seminar hall AV overhaul</dd>
+            <dt>Raised by</dt><dd>Dr. A. Deshpande (Head, CS)</dd>
+            <dt>Budget head</dt><dd>IT Equipment · Capital</dd>
+            <dt>Financial year</dt><dd>2026-27</dd>
+            <dt>Requested</dt><dd>₹6,50,000.50</dd>
+            <dt>Reason</dt><dd>Grant budget unavailable</dd>
+          </dl>
+          <a class="cta" href="#sender">Open CDC Review</a>
+          <p class="foot">This is an automated message from the College Procurement &amp; Approval System. Please do not reply. For help: procurement-help@<em>college-domain</em> · Request REQ-2026-0001 · Generated 11 Sep 2026, 14:02 IST</p>
+        </div>
+      </div>
+
+      <ul>
+        <li><strong>From</strong> is a no-reply mailbox on the college domain, never a personal address.
+          Mail sent "from" the college domain through another provider's servers is what spam filters
+          reject, so the domain's DNS records have to authorise the sender (§7).</li>
+        <li><strong>Reply-To</strong> points at a help mailbox someone reads. People reply to automated
+          mail no matter what the footer says; this way the reply reaches a person instead of bouncing.</li>
+        <li><strong><code>Auto-Submitted: auto-generated</code></strong> (RFC 3834) and
+          <strong><code>X-Auto-Response-Suppress</code></strong> stop out-of-office replies. Without
+          them, an approver's holiday auto-reply goes back to the no-reply mailbox with every notification.</li>
+        <li><strong>Threading.</strong> Every email about one request shares a <code>References</code> root,
+          so Gmail and Outlook group REQ-2026-0001's submission, escalation and decision into one conversation.</li>
+        <li><strong>Amounts use Indian grouping</strong> — ₹6,50,000.50, not ₹650,000.50 — through
+          <code>Intl.NumberFormat('en-IN')</code>. The financial year replaces the academic year
+          everywhere (§3).</li>
+      </ul>
+    </section>
+
+    <!-- 2 -->
+    <section id="outbox">
+      <span class="sec-num">§2 — The rule that shapes everything</span>
+      <h2>Never send mid-approval</h2>
+      <p class="lede">
+        The document requires that a mail failure leave the workflow unaffected. That rules out
+        sending email from inside the approval itself.
+      </p>
+
+      <div class="warn">
+        <p class="label">Why not send straight from the API</p>
+        <p>
+          Sending inside <code>fn_record_action</code>'s transaction fails both ways. If the mail
+          server is slow, the approver waits and the request stays locked. If the approval fails
+          after the email has gone, people are told about a decision that never happened. Email
+          can't be taken back.
+        </p>
+      </div>
+
+      <p>
+        Instead the approval writes a <em>record that an email is owed</em>, in the same transaction
+        as the decision. That record only exists if the decision commits. A separate worker process
+        sends from those records afterwards, at its own pace, retrying on its own.
+      </p>
+
+      <div class="pipe" role="list">
+        <div class="txn" role="listitem"><b>1 · IN THE APPROVAL</b><strong>Event recorded</strong><span>A trigger writes a workflow event beside the decision. Rolled back together.</span></div>
+        <div class="after" role="listitem"><b>2 · WORKER</b><strong>Recipients resolved</strong><span>From stage staffing and roles, never stored addresses.</span></div>
+        <div class="after" role="listitem"><b>3 · WORKER</b><strong>Email rendered</strong><span>Template filled from the committed state, frozen into the outbox.</span></div>
+        <div class="after" role="listitem"><b>4 · WORKER</b><strong>Sent over SMTP</strong><span>Retried with backoff on temporary failures.</span></div>
+        <div class="after" role="listitem"><b>5 · WORKER</b><strong>Outcome recorded</strong><span>Sent, or failed and reported to the administrators.</span></div>
+      </div>
+
+      <p>
+        This is the architecture chain from §14 of the email document — <em>workflow event → stage →
+        roles → users → recipient rules → template → send → notification record → audit log</em> —
+        with one change: the first step is inside the transaction and the rest are outside it. That
+        split is what makes it safe.
+      </p>
+    </section>
+
+    <!-- 3 -->
+    <section id="conflicts">
+      <span class="sec-num">§3 — Read this before building</span>
+      <h2>Where the document and the system disagree</h2>
+      <p class="lede">
+        The email document was written against the design notes, not the running system. These are
+        the places where building it as written would send wrong or duplicate mail.
+      </p>
+
+      <div class="conflicts">
+        <div class="conflict">
+          <h4>Does a lower stage's approval finish the request, or pass it up?</h4>
+          <div class="side"><b>Document</b>"Approved by Purchase Committee … forwarded to the Principal." The procurement design doc's own timeline shows a ₹42,000 request approved by the Committee, then by the Principal.</div>
+          <div class="side rec"><b>System today</b>Requests enter at the stage their amount belongs to, and an approval there is final. Templates 2, 3, 6 and 13 would announce a next step that never happens. <em>Decision A.</em></div>
+        </div>
+        <div class="conflict">
+          <h4>Not every request starts at the Purchase Committee</h4>
+          <div class="side"><b>Document</b>Stage 1 is always Head → Purchase Committee, so "Request Submitted" always goes to the Committee.</div>
+          <div class="side rec"><b>Plan</b>The first email follows the entry stage: Committee for under ₹50,000, the Principal's "approval required" for ₹50,000 to ₹5 lakh, "CDC review required" for ₹5 lakh and above.</div>
+        </div>
+        <div class="conflict">
+          <h4>Academic year</h4>
+          <div class="side"><b>Document</b>Uses <code>{{academic_year}}</code> throughout, and carry-forward moves a request "to academic year …".</div>
+          <div class="side rec"><b>Plan</b>The system tracks the financial year only. The variable is dropped, and carry-forward says "Carried forward to FY 2027-28".</div>
+        </div>
+        <div class="conflict">
+          <h4>Two emails to the same people at once</h4>
+          <div class="side"><b>Document</b>A Principal escalation sends both "Principal escalated" and "CDC review required" — to the same CDC members. CDC escalation does the same to the final authority.</div>
+          <div class="side rec"><b>Plan</b>Send one email per escalation, combining both: who escalated and why, and what is now required.</div>
+        </div>
+        <div class="conflict">
+          <h4>Copying people who were never involved</h4>
+          <div class="side"><b>Document</b>Final approval goes to the requester, Head, Principal, the Purchase Committee and CDC. It also says "do not automatically CC every person who previously participated".</div>
+          <div class="side rec"><b>Plan</b>Stage groups are included only if the request actually passed through that stage. A ₹6 lakh request never reached the Committee, so the Committee isn't told of its approval.</div>
+        </div>
+        <div class="conflict">
+          <h4>The Head of Department can't be identified</h4>
+          <div class="side"><b>Document</b><code>{{head_email}}</code> is copied on 18 templates.</div>
+          <div class="side rec"><b>System today</b>Users aren't linked to departments and departments have no head, so there's no way to find the right Head. Omitted until the data exists. <em>Decision C.</em></div>
+        </div>
+        <div class="conflict">
+          <h4>"Digital signature recorded"</h4>
+          <div class="side"><b>Document</b>Emails each approver confirming their digital signature after every decision.</div>
+          <div class="side rec"><b>Plan</b>What is recorded is a server-side seal, not the approver's own signature, and the approver already saw the confirmation on screen. Off by default; if kept, reworded to "decision recorded". <em>Decision E.</em></div>
+        </div>
+        <div class="conflict">
+          <h4>Two meanings of "issue"</h4>
+          <div class="side"><b>Document</b>"Principal raised issue" is a concern about a procurement request, sent to CDC.</div>
+          <div class="side rec"><b>Plan</b>In the system, "issues" are faculty complaints, which are a separate workflow. Template 10 is sent when the Principal comments on a request that's with CDC. Faculty issues aren't in the document at all. <em>Decision G.</em></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="coverage">
+      <span class="sec-num">§4 — Scope</span>
+      <h2>Template coverage</h2>
+      <p class="lede">
+        All 29 templates, checked against what the system can trigger today.
+      </p>
+
+      <div class="legend">
+        <span><i class="chip ready">Ready</i> works with today's workflow</span>
+        <span><i class="chip reword">Reword</i> works; the document's text contradicts the system</span>
+        <span><i class="chip merge">Merge</i> duplicates another email</span>
+        <span><i class="chip decide">Decision</i> depends on §13</span>
+        <span><i class="chip blocked">Blocked</i> the event doesn't exist yet</span>
+      </div>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>#</th><th>Template</th><th>Status</th><th>Sent when, in this system</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td class="mono">REQUEST_SUBMITTED</td><td><i class="chip ready">Ready</i></td><td>A request under ₹50,000 is submitted</td></tr>
+          <tr><td class="num">2</td><td class="mono">PC_APPROVED</td><td><i class="chip decide">Decision</i></td><td>Committee approves — final, or forwarded? (A)</td></tr>
+          <tr><td class="num">3</td><td class="mono">PC_PARTIAL_APPROVED</td><td><i class="chip decide">Decision</i></td><td>As above (A)</td></tr>
+          <tr><td class="num">4</td><td class="mono">PC_REJECTED</td><td><i class="chip ready">Ready</i></td><td>Committee rejects</td></tr>
+          <tr><td class="num">5</td><td class="mono">PRINCIPAL_APPROVAL_REQUIRED</td><td><i class="chip ready">Ready</i></td><td>A ₹50,000–5 lakh request is submitted, or the Committee escalates</td></tr>
+          <tr><td class="num">6</td><td class="mono">PRINCIPAL_APPROVED</td><td><i class="chip reword">Reword</i></td><td>Principal approves; "will proceed to the next stage" is untrue today</td></tr>
+          <tr><td class="num">7</td><td class="mono">PRINCIPAL_PARTIAL_APPROVED</td><td><i class="chip ready">Ready</i></td><td>Principal partially approves</td></tr>
+          <tr><td class="num">8</td><td class="mono">PRINCIPAL_REJECTED</td><td><i class="chip ready">Ready</i></td><td>Principal rejects</td></tr>
+          <tr><td class="num">9</td><td class="mono">PRINCIPAL_ESCALATED</td><td><i class="chip merge">Merge</i></td><td>Folded into 11</td></tr>
+          <tr><td class="num">10</td><td class="mono">PRINCIPAL_ISSUE_RAISED</td><td><i class="chip ready">Ready</i></td><td>Principal comments on a request that's with CDC</td></tr>
+          <tr><td class="num">11</td><td class="mono">CDC_REVIEW_REQUIRED</td><td><i class="chip ready">Ready</i></td><td>A request reaches CDC by submission or escalation</td></tr>
+          <tr><td class="num">12</td><td class="mono">CDC_COMMENT_ADDED</td><td><i class="chip ready">Ready</i></td><td>Any comment; recipients follow its visibility (§5)</td></tr>
+          <tr><td class="num">13</td><td class="mono">CDC_APPROVED</td><td><i class="chip reword">Reword</i></td><td>CDC approves; also claims a next stage</td></tr>
+          <tr><td class="num">14</td><td class="mono">CDC_PARTIAL_APPROVED</td><td><i class="chip ready">Ready</i></td><td>CDC partially approves</td></tr>
+          <tr><td class="num">15</td><td class="mono">CDC_REJECTED</td><td><i class="chip ready">Ready</i></td><td>CDC rejects</td></tr>
+          <tr><td class="num">16</td><td class="mono">CDC_ESCALATED</td><td><i class="chip merge">Merge</i></td><td>Folded into 17</td></tr>
+          <tr><td class="num">17</td><td class="mono">FINAL_REVIEW_REQUIRED</td><td><i class="chip ready">Ready</i></td><td>CDC escalates to the Chairman and Vice President</td></tr>
+          <tr><td class="num">18</td><td class="mono">FINAL_APPROVED</td><td><i class="chip ready">Ready</i></td><td>Final approval (one approver decides today — B)</td></tr>
+          <tr><td class="num">19</td><td class="mono">FINAL_PARTIAL_APPROVED</td><td><i class="chip ready">Ready</i></td><td>Final partial approval</td></tr>
+          <tr><td class="num">20</td><td class="mono">FINAL_REJECTED</td><td><i class="chip ready">Ready</i></td><td>Final rejection</td></tr>
+          <tr><td class="num">21</td><td class="mono">REQUEST_RETURNED</td><td><i class="chip blocked">Blocked</i></td><td>RETURN is accepted but does nothing — the request never goes back</td></tr>
+          <tr><td class="num">22</td><td class="mono">APPROVAL_REMINDER</td><td><i class="chip ready">Ready</i></td><td>Daily job: pending more than 3 days (§10)</td></tr>
+          <tr><td class="num">23</td><td class="mono">APPROVAL_OVERDUE</td><td><i class="chip decide">Decision</i></td><td>How long is overdue, and who is copied? (D)</td></tr>
+          <tr><td class="num">24</td><td class="mono">FULFILMENT_INITIATED</td><td><i class="chip blocked">Blocked</i></td><td>Nothing moves a request into fulfilment</td></tr>
+          <tr><td class="num">25</td><td class="mono">FULFILLED</td><td><i class="chip blocked">Blocked</i></td><td>Nothing marks a request fulfilled</td></tr>
+          <tr><td class="num">26</td><td class="mono">CLOSED</td><td><i class="chip blocked">Blocked</i></td><td>Nothing closes a request</td></tr>
+          <tr><td class="num">27</td><td class="mono">CARRIED_FORWARD</td><td><i class="chip reword">Reword</i></td><td>Carry-forward; financial year, not academic</td></tr>
+          <tr><td class="num">28</td><td class="mono">SIGNATURE_RECORDED</td><td><i class="chip decide">Decision</i></td><td>Recommended off (E)</td></tr>
+          <tr><td class="num">29</td><td class="mono">NOTIFICATION_FAILURE</td><td><i class="chip ready">Ready</i></td><td>An email fails permanently (§9)</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>
+        The four blocked templates need workflow features, not mail work: <strong>RETURN</strong>
+        must send the request back to its author as an editable draft, and something must move
+        approved requests through fulfilment to closed. Build those, and their emails follow
+        naturally from the same event mechanism.
+      </p>
+    </section>
+
+    <!-- 5 -->
+    <section id="recipients">
+      <span class="sec-num">§5 — Who gets what</span>
+      <h2>Choosing recipients</h2>
+      <p class="lede">
+        The document's rule: <em>To</em> is whoever must act, <em>Cc</em> is whoever needs to know,
+        and addresses are never hard-coded. The resolver works this out when each email is sent.
+      </p>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Event</th><th>To</th><th>Cc</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Enters a stage</td><td>Everyone staffed at that stage</td><td>The requester; the stage that escalated it</td></tr>
+          <tr><td class="mono">Approved · partial · rejected</td><td>The requester</td><td>The Principal where the request passed through or above them; the deciding stage's other members</td></tr>
+          <tr><td class="mono">Final decision</td><td>The requester, the Principal</td><td>Stages the request actually passed through</td></tr>
+          <tr><td class="mono">Comment</td><td>Everyone permitted to see it (below)</td><td>—</td></tr>
+          <tr><td class="mono">Reminder</td><td>Current stage</td><td>—</td></tr>
+          <tr><td class="mono">Carried forward</td><td>The requester</td><td>The Principal</td></tr>
+          <tr><td class="mono">Mail failure</td><td>Administrators</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Rules applied to every email</h3>
+      <ul>
+        <li><strong>Staffing comes from the database, not config files.</strong> Adding a CDC member to
+          <code>stage_approvers</code> is all it takes for them to start receiving CDC mail.</li>
+        <li><strong>One copy per person.</strong> Someone who is in both To and Cc, or holds two roles, gets
+          a single email, under To.</li>
+        <li><strong>Not about your own action.</strong> The approver who just decided isn't emailed that
+          they decided.</li>
+        <li><strong>Disabled accounts receive nothing.</strong></li>
+        <li><strong>One message per event, not one per person.</strong> The To/Cc model only works if
+          people can see who else was told. With several action-takers, the greeting names the group
+          ("Dear CDC members"); with one, it names the person.</li>
+      </ul>
+
+      <div class="decision">
+        <p class="verdict">Recommended</p>
+        <h4>Comment recipients are decided by the same rule as the screen</h4>
+        <p>
+          A restricted comment must only reach people allowed to read it. Rather than rewrite the
+          visibility rule in the mail worker — where it would slowly drift from the real one — the
+          worker checks each candidate by asking the database, as that person, whether they can see
+          the comment. The Row-Level Security policy that hides a CDC note from the requester on screen
+          is the same one that keeps it out of the requester's inbox.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="templates">
+      <span class="sec-num">§6 — Content</span>
+      <h2>Writing the emails</h2>
+      <p class="lede">
+        The document's <code>{{variable}}</code> syntax happens to be Handlebars syntax, which is also
+        the safest choice here.
+      </p>
+      <ul>
+        <li><strong>Handlebars escapes by default.</strong> Request titles, rejection reasons and remarks
+          are typed by users. A title containing <code>&lt;a href=…&gt;</code> must appear as text, not
+          become a link in the Principal's inbox. <code>{{title}}</code> escapes it; nothing uses the
+          unescaped <code>{{{…}}}</code> form.</li>
+        <li><strong>Subjects are stripped of line breaks.</strong> A title with an embedded newline must
+          not be able to inject extra mail headers.</li>
+        <li><strong>One layout, many bodies.</strong> A shared HTML frame (logo, footer, button style)
+          and a plain-text version of every email, as the document requires. Table-based HTML with
+          inline styles — the only layout that survives Outlook.</li>
+        <li><strong>Partial approvals show three figures.</strong> Requested → approved → unapproved,
+          for both quantity and amount, as the document's §9 insists. The API already returns
+          <code>unapprovedQuantity</code>, and the original request is never overwritten, so
+          this comes straight from stored data.</li>
+        <li><strong>Deep links need frontend routes.</strong> The button goes to
+          <code>{{app_base_url}}/requests/:id</code>. The current frontend switches pages in state and has
+          no URLs, so these links have nowhere to land until it gains routes. They never carry sign-in
+          tokens; the recipient signs in as usual.</li>
+        <li><strong>Frozen at render time.</strong> The rendered subject and body are stored before
+          sending, so a retry sends exactly what was first rendered, and the outbox is a record of what
+          people were told.</li>
+      </ul>
+    </section>
+
+    <!-- 7 -->
+    <section id="provider">
+      <span class="sec-num">§7 — Delivery</span>
+      <h2>Mail provider and DNS</h2>
+      <p class="lede">
+        The code speaks plain SMTP through Nodemailer, so the provider is a configuration choice.
+        The right one depends on what email the college already uses.
+      </p>
+
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>If the college uses</th><th>Send through</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Google Workspace</td><td>Workspace SMTP relay</td><td>Mail comes from the college's own domain; Workspace sending limits apply — ample for one college's approvals</td></tr>
+          <tr><td>Microsoft 365</td><td>Exchange Online</td><td>Microsoft is retiring password-based SMTP sign-in; plan on OAuth or a connector-based relay, and check current status with college IT</td></tr>
+          <tr><td>Neither, or a separate service is preferred</td><td>A transactional service — Zoho ZeptoMail or Amazon SES (Mumbai region)</td><td>Built for exactly this traffic, with delivery logs. SES accounts start in a sandbox until production access is granted</td></tr>
+          <tr><td>Development, on your machine</td><td>Mailpit in Docker</td><td>Catches every message and shows it in a local web inbox; nothing leaves the laptop</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>DNS records the college's IT must add</h3>
+      <p>
+        Gmail and Outlook increasingly reject mail from domains that don't authenticate it. Whichever
+        provider is chosen, it will supply exact values for all three:
+      </p>
+      <ul>
+        <li><strong>SPF</strong> — lists the servers allowed to send as the domain.</li>
+        <li><strong>DKIM</strong> — the provider signs each message; the public key lives in DNS.</li>
+        <li><strong>DMARC</strong> — tells receivers what to do with mail that fails the first two.
+          Start at <code>p=none</code> with reporting turned on, and tighten to
+          <code>quarantine</code> once reports show only legitimate mail.</li>
+      </ul>
+
+      <div class="warn">
+        <p class="label">Two dependencies outside this project</p>
+        <p>
+          The college domain itself is still to be finalised (an open question in the requirements
+          document), and adding DNS records needs whoever controls it. Neither blocks building and
+          testing against Mailpit, but both block real delivery.
+        </p>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section id="database">
+      <span class="sec-num">§8 — Storage</span>
+      <h2>Database additions</h2>
+      <p class="lede">
+        Two tables and one role, added as a migration like every change since the first deployment.
+      </p>
+
+      <pre class="code"><span class="c">-- Written by triggers inside the approval transaction. Exists only if the decision commits.</span>
+<span class="k">CREATE TABLE</span> workflow_events (
+    event_id      BIGSERIAL <span class="k">PRIMARY KEY</span>,
+    event_type    TEXT NOT NULL,            <span class="c">-- 'PRINCIPAL_ESCALATE', 'COMMENT_ADDED', ...</span>
+    request_id    UUID REFERENCES requests,
+    action_id     UUID REFERENCES approval_actions,
+    comment_id    UUID REFERENCES comments,
+    actor_user_id UUID REFERENCES users,
+    occurred_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at  TIMESTAMPTZ                <span class="c">-- set once the worker has queued its email</span>
+);
+
+<span class="c">-- One row per message. The rendered content is frozen here before sending.</span>
+<span class="k">CREATE TABLE</span> email_outbox (
+    email_id        UUID <span class="k">PRIMARY KEY</span> DEFAULT gen_random_uuid(),
+    event_id        BIGINT REFERENCES workflow_events,
+    template_id     TEXT NOT NULL,
+    to_addresses    TEXT[] NOT NULL,
+    cc_addresses    TEXT[] NOT NULL DEFAULT <span class="s">'{}'</span>,
+    subject         TEXT NOT NULL,
+    html_body       TEXT NOT NULL,
+    text_body       TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT <span class="s">'PENDING'</span>,  <span class="c">-- PENDING, SENT, FAILED, SKIPPED</span>
+    attempts        INT  NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_error      TEXT,
+    provider_id     TEXT,
+    sent_at         TIMESTAMPTZ,
+    <span class="k">UNIQUE</span> (event_id, template_id)             <span class="c">-- an event can never queue the same email twice</span>
+);</pre>
+
+      <ul>
+        <li><strong>Where events come from.</strong> A trigger on <code>approval_actions</code> (the
+          action and the stage it happened at give <code>PRINCIPAL_ESCALATE</code>,
+          <code>CDC_REJECT</code> and so on) and one on <code>comments</code>. The in-app notification
+          triggers stay as they are; email is an additional channel, not a replacement.</li>
+        <li><strong>The worker's own database role.</strong> The worker has to read requests across the
+          whole college to address mail, so it can't run under the per-user policies the API uses. It
+          gets a dedicated <code>mail_worker</code> role that can read the workflow tables and write
+          only the outbox. That is narrower than <code>postgres</code>, and it isn't the API's
+          <code>app_user</code>, which keeps refusing to start with any role that bypasses Row-Level
+          Security.</li>
+      </ul>
+    </section>
+
+    <!-- 9 -->
+    <section id="worker">
+      <span class="sec-num">§9 — Sending</span>
+      <h2>The mail worker</h2>
+      <p class="lede">
+        A small separate process, <code>npm run mail-worker</code>, running beside the API.
+      </p>
+      <ul>
+        <li><strong>Picks up work safely.</strong> Every few seconds it claims pending rows with
+          <code>FOR UPDATE SKIP LOCKED</code>, so a second worker, or a restart mid-batch, can never send
+          the same email twice.</li>
+        <li><strong>Tells temporary from permanent failures.</strong> A 4xx reply or a dropped connection is
+          retried after 1 minute, then 5, 30, 2 hours and 6 hours. A 5xx reply such as "no such mailbox"
+          fails at once. Retrying it only damages the domain's sending reputation.</li>
+        <li><strong>Reports what it couldn't send.</strong> A message that fails for good queues
+          <code>SYSTEM_NOTIFICATION_FAILURE</code> to the administrators. That alert is never itself
+          alerted on if it fails, so one outage can't set off a chain of failure emails.</li>
+        <li><strong>Leaves the workflow alone.</strong> A failed email changes nothing about the request.
+          In-app notifications have already been created by then and still work.</li>
+        <li><strong>Can be switched off.</strong> <code>MAIL_ENABLED=false</code> leaves events queued
+          but unsent; turning it back on sends the backlog.</li>
+      </ul>
+    </section>
+
+    <!-- 10 -->
+    <section id="reminders">
+      <span class="sec-num">§10 — Time-based mail</span>
+      <h2>Reminders and overdue</h2>
+      <p class="lede">
+        The only emails not triggered by someone's action. The worker checks once an hour and sends
+        what is due.
+      </p>
+      <ul>
+        <li><strong>Reminder</strong> — pending at one stage for more than 3 days, matching the dashboard's
+          "attention required" panel. To the approvers of that stage, at most once every 3 days per stage visit.</li>
+        <li><strong>Overdue</strong> — pending past a longer threshold. The number of days and who else is
+          copied (the next authority, administrators, or both) need deciding (D).</li>
+        <li><strong>Safe across restarts.</strong> Each reminder is keyed on request, stage, kind and date,
+          so an hourly check that runs twice, or after a restart, still sends it once.</li>
+        <li><strong>Days are counted in IST</strong>, not the server's clock, so "3 days" means what the
+          college means by it.</li>
+      </ul>
+    </section>
+
+    <!-- 11 -->
+    <section id="config">
+      <span class="sec-num">§11 — Settings</span>
+      <h2>Configuration</h2>
+      <p class="lede">
+        All in <code>server/.env</code>, never committed. Placeholders are shown in angle brackets.
+      </p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Variable</th><th>Example</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">MAIL_ENABLED</td><td class="mono">true</td><td>Master switch for sending</td></tr>
+          <tr><td class="mono">SMTP_HOST · SMTP_PORT</td><td class="mono">&lt;provider host&gt; · 587</td><td>Port 587 with STARTTLS required; 465 for implicit TLS</td></tr>
+          <tr><td class="mono">SMTP_USER · SMTP_PASS</td><td class="mono">&lt;from provider&gt;</td><td>Credentials, or blank for an IP-allowlisted relay</td></tr>
+          <tr><td class="mono">MAIL_FROM</td><td class="mono">S.P. College Procurement &lt;no-reply@&lt;domain&gt;&gt;</td><td>The no-reply sender</td></tr>
+          <tr><td class="mono">MAIL_REPLY_TO</td><td class="mono">procurement-help@&lt;domain&gt;</td><td>Where accidental replies go</td></tr>
+          <tr><td class="mono">APP_BASE_URL</td><td class="mono">https://procurement.&lt;domain&gt;</td><td>Root for the buttons' links</td></tr>
+          <tr><td class="mono">MAIL_REDIRECT_TO</td><td class="mono">&lt;your own address&gt;</td><td>Staging only: every email goes here instead, marked with who it was meant for</td></tr>
+          <tr><td class="mono">REMINDER_AFTER_DAYS</td><td class="mono">3</td><td>First reminder</td></tr>
+          <tr><td class="mono">OVERDUE_AFTER_DAYS</td><td class="mono">&lt;decision D&gt;</td><td>Overdue escalation</td></tr>
+          <tr><td class="mono">MAIL_WORKER_DATABASE_URL</td><td class="mono">postgresql://mail_worker:…</td><td>The worker's own role (§8)</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="warn">
+        <p class="label">Set MAIL_REDIRECT_TO on every non-production copy</p>
+        <p>
+          A staging server loaded with realistic data and real staff addresses will email the real
+          Principal about requests that don't exist. With the redirect set, everything lands in one
+          test inbox instead. The worker should refuse to start with sending enabled and no redirect
+          unless it's explicitly running as production.
+        </p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="phases">
+      <span class="sec-num">§12 — Sequence</span>
+      <h2>Build order</h2>
+      <p class="lede">
+        Everything up to phase 6 can be built and tested on your machine with Mailpit, before the
+        domain or provider exists.
+      </p>
+
+      <div class="phases">
+        <div class="phase"><div class="n">1</div><div>
+          <h4>Answer the decisions</h4>
+          <p>§13, especially A: it changes the wording of four templates and possibly the workflow itself.</p>
+          <p class="out">Ends with: <b>a confirmed template list</b></p>
+        </div></div>
+        <div class="phase"><div class="n">2</div><div>
+          <h4>Local mail catcher</h4>
+          <p>Add Mailpit to <code>db/docker-compose.yml</code>, Nodemailer to the server, and a script that sends one test email.</p>
+          <p class="out">Ends with: <b>an email visible in Mailpit's inbox</b></p>
+        </div></div>
+        <div class="phase"><div class="n">3</div><div>
+          <h4>Events and outbox</h4>
+          <p>Migration for the two tables, the triggers and the <code>mail_worker</code> role, with tests that a rolled-back decision leaves no event behind.</p>
+          <p class="out">Ends with: <b>every decision leaves exactly one event</b></p>
+        </div></div>
+        <div class="phase"><div class="n">4</div><div>
+          <h4>Recipient resolver</h4>
+          <p>The §5 table as data, with a test per event, including "never tell the Committee about a request it didn't see" and comment visibility checked through the database.</p>
+          <p class="out">Ends with: <b>To and Cc correct for every event</b></p>
+        </div></div>
+        <div class="phase"><div class="n">5</div><div>
+          <h4>Templates</h4>
+          <p>The layout and the 16 ready templates, in HTML and plain text, with tests for escaping, Indian number formatting and the partial-approval figures.</p>
+          <p class="out">Ends with: <b>every ready template rendered and checked</b></p>
+        </div></div>
+        <div class="phase"><div class="n">6</div><div>
+          <h4>The worker</h4>
+          <p>Claiming, sending, retries, permanent failures and the administrator alert. Integration tests read delivered mail back through Mailpit's API.</p>
+          <p class="out">Ends with: <b>a full escalation producing the right emails in Mailpit</b></p>
+        </div></div>
+        <div class="phase"><div class="n">7</div><div>
+          <h4>Reminders</h4>
+          <p>The hourly check, keyed so it never sends twice.</p>
+          <p class="out">Ends with: <b>a 4-day-old request reminded once</b></p>
+        </div></div>
+        <div class="phase"><div class="n">8</div><div>
+          <h4>Real delivery</h4>
+          <p>Provider account, DNS records, then a staging run with <code>MAIL_REDIRECT_TO</code> before switching to real recipients.</p>
+          <p class="out">Ends with: <b>mail reaching Gmail and Outlook inboxes, not spam</b></p>
+        </div></div>
+      </div>
+
+      <p style="margin-top:24px">
+        Later, outside this plan: building RETURN and the fulfilment and closing steps unblocks
+        templates 21 and 24–26, and linking users to departments makes the Head's copy possible.
+      </p>
+    </section>
+
+    <!-- 13 -->
+    <section id="questions">
+      <span class="sec-num">§13 — For Madhuri Mam and the team</span>
+      <h2>Decisions needed</h2>
+      <p class="lede">
+        Each changes what gets sent. A and F matter most.
+      </p>
+      <ol class="questions">
+        <li><strong>When a stage approves, is the request finished or passed up?</strong>
+          The email document and the procurement timeline say the Committee's approval goes on to the
+          Principal. The system treats approval at the entry stage as final.
+          <span class="affects">Affects templates 2, 3, 6, 13 — and possibly the workflow</span></li>
+        <li><strong>Must both the Chairman and the Vice President approve?</strong>
+          Today either one can decide alone. The document's "required" and "completed approvers"
+          suggest both.
+          <span class="affects">Affects templates 17–20 and the workflow</span></li>
+        <li><strong>How is a request's Head of Department found?</strong>
+          By the requester's department, needing users linked to departments and each department's
+          Head recorded.
+          <span class="affects">Affects the Cc on 18 templates</span></li>
+        <li><strong>When is an approval overdue, and who is told?</strong>
+          Suggested: 7 days, copying administrators.
+          <span class="affects">Affects template 23</span></li>
+        <li><strong>Keep the "digital signature recorded" email?</strong>
+          Recommended: no.
+          <span class="affects">Affects template 28</span></li>
+        <li><strong>What email does the college use, and what is the domain?</strong>
+          Google Workspace, Microsoft 365 or something else decides the provider, and the domain
+          decides the no-reply address.
+          <span class="affects">Blocks phase 8</span></li>
+        <li><strong>Should faculty issues send email too?</strong>
+          They aren't in the document. Suggested: in-app only for now.
+          <span class="affects">Adds up to three templates</span></li>
+      </ol>
+    </section>
+
+  </main>
+
+  <footer>
+    <span>S.P. College Approval Hub</span>
+    <span>Stage 3 — Email</span>
+    <span>Branch: Database/everything</span>
+    <span>Source: Master Email Workflow &amp; Template Specification</span>
+  </footer>
+
+</div>
+
+</body>
+</html>

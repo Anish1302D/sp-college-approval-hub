@@ -3,3 +3,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# API attachments written at runtime
+server/uploads/

@@ -114,6 +114,41 @@ AS $$
         OR app_is_stage_participant(p_request_id, app_current_user_id());
 $$;
 
+-- The Principal reads all college data (requirements §4), except drafts, which
+-- stay private to their author until submitted. Kept separate from
+-- app_can_see_request on purpose: that helper also gates WRITE policies, and
+-- read-all must not quietly become edit-all.
+CREATE OR REPLACE FUNCTION app_principal_can_read(p_request_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT app_has_role('PRINCIPAL')
+       AND EXISTS (
+            SELECT 1 FROM requests r
+            WHERE r.request_id = p_request_id
+              AND r.current_status <> 'DRAFT'
+       );
+$$;
+
+-- Issue participants: raiser, assignee, escalation target, and the Principal.
+CREATE OR REPLACE FUNCTION app_can_see_issue(p_issue_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT app_has_role('PRINCIPAL')
+        OR EXISTS (
+            SELECT 1 FROM issues i
+            WHERE i.issue_id = p_issue_id
+              AND app_current_user_id() IN (i.raised_by, i.assigned_to, i.escalated_to)
+        );
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Policies
 -- ---------------------------------------------------------------------------
@@ -135,7 +170,20 @@ CREATE POLICY requests_approver ON requests
     FOR SELECT
     USING (app_is_stage_participant(request_id, app_current_user_id()));
 
+-- The Principal reads every submitted request, not only those routed through
+-- the Principal stage — a 5 lakh request goes straight to CDC and would
+-- otherwise be invisible to the college's primary approver.
+CREATE POLICY requests_principal_read ON requests
+    FOR SELECT
+    USING (app_has_role('PRINCIPAL') AND current_status <> 'DRAFT');
+
 -- Approvers act through fn_record_action, which updates the request row.
+--
+-- USING: the approver must be staffed at the stage the request sits at NOW.
+-- WITH CHECK: the updated row may sit at that stage or any stage above it.
+-- The explicit WITH CHECK matters. Without one, Postgres re-applies USING to
+-- the new row — and an escalation moves the request to a stage the escalating
+-- approver is not staffed at, so every escalation was rejected.
 CREATE POLICY requests_approver_update ON requests
     FOR UPDATE
     USING (
@@ -143,6 +191,16 @@ CREATE POLICY requests_approver_update ON requests
             SELECT 1 FROM stage_approvers sa
             WHERE sa.user_id = app_current_user_id()
               AND sa.stage_id = requests.current_stage_id
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1
+            FROM stage_approvers sa
+            JOIN workflow_stages mine   ON mine.stage_id   = sa.stage_id
+            JOIN workflow_stages target ON target.stage_id = requests.current_stage_id
+            WHERE sa.user_id = app_current_user_id()
+              AND target.sequence_no >= mine.sequence_no
         )
     );
 
@@ -153,6 +211,10 @@ CREATE POLICY request_items_via_request ON request_items
     USING (app_has_role('ADMIN') OR app_can_see_request(request_id))
     WITH CHECK (app_has_role('ADMIN') OR app_can_see_request(request_id));
 
+CREATE POLICY request_items_principal_read ON request_items
+    FOR SELECT
+    USING (app_principal_can_read(request_id));
+
 -- The audit trail follows the request too.
 ALTER TABLE approval_actions ENABLE ROW LEVEL SECURITY;
 
@@ -160,9 +222,16 @@ CREATE POLICY approval_actions_via_request ON approval_actions
     USING (app_has_role('ADMIN') OR app_can_see_request(request_id))
     WITH CHECK (app_has_role('ADMIN') OR app_can_see_request(request_id));
 
+CREATE POLICY approval_actions_principal_read ON approval_actions
+    FOR SELECT
+    USING (app_principal_can_read(request_id));
+
 -- Comment visibility — the hierarchical rule from the design doc.
 --   ALL         visible to anyone who can see the request
---   UP_CHAIN    visible to the authoring stage and every stage above it
+--   UP_CHAIN    visible to the authoring stage, every stage above it, and the
+--               Principal. The design doc's own example: a CDC member's note
+--               that grant budget is unavailable is visible to CDC and to the
+--               Principal, but not to the Purchase Committee or the Head.
 --   STAGE_ONLY  visible only to approvers on the authoring stage
 -- The author always sees their own comment.
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
@@ -173,18 +242,21 @@ CREATE POLICY comments_visibility ON comments
         app_has_role('ADMIN')
         OR author_user_id = app_current_user_id()
         OR (
-            app_can_see_request(request_id)
+            (app_can_see_request(request_id) OR app_principal_can_read(request_id))
             AND (
                 visibility = 'ALL'
                 OR (
                     visibility = 'UP_CHAIN'
-                    AND EXISTS (
-                        SELECT 1
-                        FROM stage_approvers sa
-                        JOIN workflow_stages viewer ON viewer.stage_id = sa.stage_id
-                        JOIN workflow_stages author ON author.stage_id = comments.stage_id
-                        WHERE sa.user_id = app_current_user_id()
-                          AND viewer.sequence_no >= author.sequence_no
+                    AND (
+                        app_has_role('PRINCIPAL')
+                        OR EXISTS (
+                            SELECT 1
+                            FROM stage_approvers sa
+                            JOIN workflow_stages viewer ON viewer.stage_id = sa.stage_id
+                            JOIN workflow_stages author ON author.stage_id = comments.stage_id
+                            WHERE sa.user_id = app_current_user_id()
+                              AND viewer.sequence_no >= author.sequence_no
+                        )
                     )
                 )
                 OR (
@@ -199,9 +271,17 @@ CREATE POLICY comments_visibility ON comments
         )
     );
 
+-- You can only comment as yourself, and only on a request you can see.
 CREATE POLICY comments_insert ON comments
     FOR INSERT
-    WITH CHECK (author_user_id = app_current_user_id());
+    WITH CHECK (
+        author_user_id = app_current_user_id()
+        AND (
+            app_has_role('ADMIN')
+            OR app_can_see_request(request_id)
+            OR app_principal_can_read(request_id)
+        )
+    );
 
 -- People see only their own notifications.
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
@@ -210,34 +290,67 @@ CREATE POLICY notifications_own ON notifications
     USING (app_has_role('ADMIN') OR user_id = app_current_user_id())
     WITH CHECK (app_has_role('ADMIN') OR user_id = app_current_user_id());
 
--- Attachments follow their request.
+-- Attachments follow their parent request or issue. Reading, adding and
+-- removing are separate policies: being able to see a quotation must not
+-- mean being able to delete it. There is no UPDATE policy — a stored file's
+-- record is never edited, only added or (by its uploader) removed.
 ALTER TABLE attachments ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY attachments_via_request ON attachments
+CREATE POLICY attachments_read ON attachments
+    FOR SELECT
     USING (
         app_has_role('ADMIN')
         OR uploaded_by = app_current_user_id()
-        OR (request_id IS NOT NULL AND app_can_see_request(request_id))
-    )
-    WITH CHECK (
-        app_has_role('ADMIN')
-        OR uploaded_by = app_current_user_id()
+        OR (request_id IS NOT NULL
+            AND (app_can_see_request(request_id) OR app_principal_can_read(request_id)))
+        OR (issue_id IS NOT NULL AND app_can_see_issue(issue_id))
     );
 
+CREATE POLICY attachments_insert ON attachments
+    FOR INSERT
+    WITH CHECK (
+        uploaded_by = app_current_user_id()
+        AND (
+            app_has_role('ADMIN')
+            OR (request_id IS NOT NULL AND app_can_see_request(request_id))
+            OR (issue_id   IS NOT NULL AND app_can_see_issue(issue_id))
+        )
+    );
+
+CREATE POLICY attachments_delete ON attachments
+    FOR DELETE
+    USING (app_has_role('ADMIN') OR uploaded_by = app_current_user_id());
+
 -- Non-financial issues: raiser, assignee, escalation target, Principal, Admin.
+-- Split so the Principal and assignee can move an issue along (review,
+-- assign, resolve) — previously only the raiser could update it, so the
+-- Principal could see an issue but never resolve it. There is no DELETE
+-- policy: issues are part of the record.
 ALTER TABLE issues ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY issues_participants ON issues
+CREATE POLICY issues_read ON issues
+    FOR SELECT
     USING (
         app_has_role('ADMIN')
         OR app_has_role('PRINCIPAL')
-        OR raised_by   = app_current_user_id()
-        OR assigned_to = app_current_user_id()
-        OR escalated_to = app_current_user_id()
+        OR app_current_user_id() IN (raised_by, assigned_to, escalated_to)
+    );
+
+CREATE POLICY issues_insert ON issues
+    FOR INSERT
+    WITH CHECK (app_has_role('ADMIN') OR raised_by = app_current_user_id());
+
+CREATE POLICY issues_update ON issues
+    FOR UPDATE
+    USING (
+        app_has_role('ADMIN')
+        OR app_has_role('PRINCIPAL')
+        OR app_current_user_id() IN (raised_by, assigned_to, escalated_to)
     )
     WITH CHECK (
         app_has_role('ADMIN')
-        OR raised_by = app_current_user_id()
+        OR app_has_role('PRINCIPAL')
+        OR app_current_user_id() IN (raised_by, assigned_to, escalated_to)
     );
 
 -- The audit log is append-only for everyone; only Admin reads it back.

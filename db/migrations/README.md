@@ -11,8 +11,24 @@ From that point on, every schema change is a numbered migration in this folder.
 
 - **Before first deployment** — edit `db/schema/*.sql` freely and rebuild.
 - **After first deployment** — never edit a schema file expecting it to take effect.
-  Add a migration here, and mirror the change into `db/schema/` so a fresh build
-  still produces the same result.
+  Add a migration here, mirror the change into `db/schema/` so a fresh build
+  still produces the same result, and add the migration's filename to
+  `db/schema/17_schema_migrations.sql` so a fresh build records it as applied.
+
+A fresh build creates `schema_migrations` itself — there is no baseline step to
+remember. Each migration also creates the table if it is missing, for databases
+built before that file existed.
+
+### Proving a migration matches the schema files
+
+The two must produce identical databases. Build one fresh, apply the migration to
+another, and compare their structure:
+
+```bash
+pg_dump -U postgres -s --no-owner spc_approval > migrated.sql
+pg_dump -U postgres -s --no-owner spc_fresh    > fresh.sql
+diff migrated.sql fresh.sql      # only the random \restrict token lines may differ
+```
 
 ## Naming
 

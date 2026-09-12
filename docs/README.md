@@ -1,43 +1,60 @@
 # Documentation
 
-Both pages are standalone HTML — open them directly in a browser. They fetch fonts
-(and, for the diagrams page, Mermaid) from CDN on first load, so an internet
-connection is needed the first time.
+Three reference pages, each standalone HTML — open them directly in a browser.
+They fetch fonts (and, for the diagrams page, Mermaid) from a CDN on first load,
+so the first open needs an internet connection.
 
-## Backend Build Plan
+## Where to start
 
-`ApprovalHub_Backend_Plan.html` — the plan for the API layer on top of the database:
-the stack decision and the reasoning against an ORM, the `withUser` primitive that
-makes Row-Level Security work, all 38 endpoints, error mapping, the mismatch between
-the current frontend and the multi-item data model, and a ten-phase build order.
-
-Read §2 before writing any data-access code — the `SET LOCAL` versus `SET` distinction
-there is the difference between working security and a user seeing someone else's data.
+| If you want to | Read |
+|---|---|
+| Understand the data model and the workflow | **Schema Plates** |
+| Work on the API | **Backend Build Plan**, §2 first |
+| Work on email notifications | **No-Reply Mail Plan**, §3 first |
+| Run the system | `readme.md` at the repository root |
+| Know what each part does | `db/README.md`, `server/README.md` |
+| See what happened and why | `AI_LOGS.md` |
 
 ## Schema Plates
 
-`ApprovalHub_Schema_Plates.html` — the design reference for the database. Six diagrams
-(use case, approval workflow, ERD, class model, request lifecycle, escalation sequence),
-the rules the schema enforces, a module-by-module file reference, and setup steps.
+`ApprovalHub_Schema_Plates.html` — the design reference for the database. Six
+diagrams (use case, approval workflow, entity relationships, class model,
+request lifecycle, escalation sequence), the rules the schema enforces, and a
+module-by-module file reference.
 
-Open it directly in a browser. It needs an internet connection on first load to fetch
-Mermaid and the IBM Plex fonts from CDN; everything else is self-contained.
-
-## Diagram sources
-
-`diagrams/*.mmd` are the standalone Mermaid sources, one per diagram:
+The diagram sources are in `diagrams/*.mmd`, one per diagram, and render
+anywhere Mermaid is supported (GitHub, mermaid.live, VS Code).
 
 | File | Diagram |
 |---|---|
-| `01_use_case.mmd`  | Use case — six actors, twenty use cases |
-| `02_erd.mmd`       | Entity relationships — full relational model |
-| `03_class.mmd`     | Class model — domain objects plus WorkflowEngine and NotificationService |
-| `04_state.mmd`     | Request lifecycle — all fourteen states |
-| `05_sequence.mmd`  | Escalation sequence — a ₹6,00,000 request reaching Chairman + VP |
-| `06_workflow.mmd`  | Approval workflow — amount-based routing and escalation |
+| `01_use_case.mmd` | Use case — six actors, twenty use cases |
+| `02_erd.mmd` | Entity relationships — the full relational model |
+| `03_class.mmd` | Class model, including the workflow engine |
+| `04_state.mmd` | Request lifecycle — all fourteen states |
+| `05_sequence.mmd` | Escalation of a ₹6,00,000 request to Chairman + VP |
+| `06_workflow.mmd` | Approval workflow — routing and escalation |
 
-Render them anywhere Mermaid is supported (GitHub markdown, mermaid.live, VS Code
-Mermaid extensions), or regenerate the HTML page after editing.
+## Backend Build Plan
 
-Both the `.mmd` sources and the copies embedded in the HTML page have been validated
-against the Mermaid parser.
+`ApprovalHub_Backend_Plan.html` — why the API has no ORM, the `withUser`
+primitive that makes Row-Level Security work, all endpoints, error mapping, and
+the build order. Written before the API existed; the API now follows it, and
+`server/README.md` is the up-to-date reference.
+
+**Read §2 before writing any data-access code.** The `SET LOCAL` versus `SET`
+distinction there is the difference between working access control and one
+person seeing another's requests.
+
+## No-Reply Mail Plan
+
+`ApprovalHub_Mail_Plan.html` — how the system will send email: the no-reply
+sender and its headers, the outbox and worker that keep mail from ever delaying
+or contradicting an approval, recipient rules, all 29 templates from the email
+specification checked against what the system can trigger today, provider and
+DNS setup, and the decisions still needed.
+
+**Read §3 first.** It lists where the email specification and the built system
+disagree — including four templates that cannot be sent until the workflow
+gains the steps they describe.
+
+Nothing in this plan is built yet.
