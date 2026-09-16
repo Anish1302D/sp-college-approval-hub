@@ -6,3 +6,4 @@ dist/
 
 # API attachments written at runtime
 server/uploads/
+.neon
