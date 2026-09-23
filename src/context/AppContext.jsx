@@ -42,7 +42,7 @@ export const AppProvider = ({ children }) => {
   const [route, setRoute] = useState(parseHash);
   const [toast, setToast] = useState(null);
   const [dataVersion, setDataVersion] = useState(0);
-  const [modals, setModals] = useState({ newRequest: false, newIssue: false, inventory: false, export: false, bill: false });
+  const [modals, setModals] = useState({ newRequest: false, newIssue: false, inventory: false, export: false, bill: false, loginNotifications: false });
   const toastTimer = useRef();
 
   const portal = portalFor(user);
@@ -95,6 +95,8 @@ export const AppProvider = ({ children }) => {
     // Keep a deep link the person arrived with (e.g. from an email).
     setRoute(parseHash());
     showToast(`Signed in as ${me.name}`, 'success');
+    // Show notification popup after login.
+    setModals((m) => ({ ...m, loginNotifications: true }));
   }, [showToast]);
 
   const setActivePage = useCallback((page) => {

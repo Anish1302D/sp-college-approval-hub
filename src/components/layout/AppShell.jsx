@@ -9,6 +9,7 @@ import { NewIssueModal } from '../modals/NewIssueModal';
 import { InventoryModal } from '../modals/InventoryModal';
 import { BillModal } from '../modals/BillModal';
 import { ExportModal } from '../modals/ExportModal';
+import { LoginNotificationsModal } from '../modals/LoginNotificationsModal';
 
 export const AppShell = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -27,6 +28,7 @@ export const AppShell = ({ children }) => {
       <InventoryModal />
       <BillModal />
       <ExportModal />
+      <LoginNotificationsModal />
       <Toast />
     </div>
   );
