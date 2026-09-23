@@ -2,23 +2,23 @@ import React, { useState } from 'react';
 import { ArrowRight, Loader2, Lock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
-// Development only: the accounts from db/seed/03_users_and_approvers.sql.
-// `import.meta.env.DEV` is replaced with `false` in a production build, so
-// this whole list — seed password included — is removed from what ships.
-const DEMO = import.meta.env.DEV
-  ? {
-    password: 'ChangeMe#2026',
-    accounts: [
-      ['Head, Computer Science', 'head.cs@spcollege.edu'],
-      ['Activity In-charge', 'incharge@spcollege.edu'],
-      ['Purchase Committee', 'pc1@spcollege.edu'],
-      ['Principal', 'principal@spcollege.edu'],
-      ['CDC (Grant)', 'cdc.grant@spcollege.edu'],
-      ['Chairman', 'chairman@spcollege.edu'],
-      ['Administrator', 'admin@spcollege.edu'],
-    ],
-  }
-  : null;
+// Demo accounts from db/seed/03_users_and_approvers.sql.
+// Shown on every build so evaluators can try each role.
+const DEMO = {
+  password: 'ChangeMe#2026',
+  accounts: [
+    ['Head, Computer Science', 'head.cs@spcollege.edu'],
+    ['Activity In-charge', 'incharge@spcollege.edu'],
+    ['Purchase Committee', 'pc1@spcollege.edu'],
+    ['Principal', 'principal@spcollege.edu'],
+    ['CDC (Grant)', 'cdc.grant@spcollege.edu'],
+    ['CDC (Non-Grant)', 'cdc.nongrant@spcollege.edu'],
+    ['Chairman', 'chairman@spcollege.edu'],
+    ['Vice President', 'vp@spcollege.edu'],
+    ['Clerk', 'clerk@spcollege.edu'],
+    ['Administrator', 'admin@spcollege.edu'],
+  ],
+};
 
 export const Login = () => {
   const { signIn, showToast } = useApp();
@@ -82,9 +82,8 @@ export const Login = () => {
           <p className="text-[11px] text-gray-400 text-center">Forgotten your password? Ask the college administrator to reset it.</p>
         </form>
 
-        {DEMO && (
-          <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 p-4 space-y-2">
-            <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">Development accounts — not in production builds</p>
+        <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 p-4 space-y-2">
+            <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">Quick login — click any role to sign in</p>
             <div className="flex flex-wrap gap-1.5">
               {DEMO.accounts.map(([label, address]) => (
                 <button key={address} disabled={busy} onClick={() => submit(null, { email: address, password: DEMO.password })}
@@ -94,7 +93,6 @@ export const Login = () => {
               ))}
             </div>
           </div>
-        )}
       </div>
 
       <div className="max-w-6xl w-full mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 border-t border-gray-200 pt-4">

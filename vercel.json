@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://sp-college-approval-hub.onrender.com/api/:path*" },
+    { "source": "/health", "destination": "https://sp-college-approval-hub.onrender.com/health" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
