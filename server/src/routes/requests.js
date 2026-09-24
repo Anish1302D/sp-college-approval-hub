@@ -100,16 +100,13 @@ function notifyRequestAsync({ request, actorId, action, comments, rejectionReaso
       const now = new Date();
 
       if (action === 'SUBMITTED') {
-        // ─── New submission → notify the first-stage approvers + principal ───
-        const approvers = await resolveStageApprovers(request.stage?.id);
-        const toEmail = approvers.length > 0
-          ? approvers.map((a) => a.email).join(', ')
-          : principal.email;
-
+        // ─── New submission → notify the principal (configured email) ───
+        // Stage approvers may have placeholder emails from seeding, so we
+        // always use the configured principalEmail for reliable delivery.
         const emailData = buildRequestStatusEmail({
           request: { ...request, requesterEmail: requester?.email },
-          recipientEmail: toEmail,
-          recipientName: approvers.length > 0 ? approvers[0].name : principal.name,
+          recipientEmail: principal.email,
+          recipientName: principal.name,
           notificationType: 'NEW REQUEST',
           emailAction: 'New Financial Request Submitted',
           eventDescription:
@@ -157,58 +154,30 @@ function notifyRequestAsync({ request, actorId, action, comments, rejectionReaso
 
         const nextStageLabel = STAGE_LABELS[request.status] || request.stage?.name || '—';
 
-        if (requester) {
-          const emailData = buildRequestStatusEmail({
-            request: { ...request, requesterEmail: requester.email },
-            recipientEmail: requester.email,
-            recipientName: requester.full_name,
-            notificationType: typeMap[action],
-            emailAction: actionMap[action],
-            eventDescription: descriptionMap[action],
-            decision: typeMap[action],
-            approverName: actor.full_name,
-            approverRole: request.stage?.name || 'Approver',
-            decisionDate: now,
-            approvalRemarks: comments || null,
-            rejectionReason: rejectionReason || null,
-            actionRequired: actionRequiredMap[action],
-            ctaText: 'View Request',
-            workflowStage: request.stage?.name || request.status,
-            nextStage: action === 'ESCALATE' ? nextStageLabel : (request.status === 'APPROVED' ? 'Fulfilment' : '—'),
-            pendingSince: request.submittedAt || request.createdAt,
-            pendingDays: Math.floor((now - new Date(request.submittedAt || request.createdAt)) / 86400000),
-          });
+        // All seeded users have placeholder emails (e.g. head.cs@spcollege.edu).
+        // Always send to the configured principalEmail for reliable delivery.
+        const emailData = buildRequestStatusEmail({
+          request: { ...request, requesterEmail: requester?.email },
+          recipientEmail: principal.email,
+          recipientName: requester?.full_name || principal.name,
+          notificationType: typeMap[action],
+          emailAction: actionMap[action],
+          eventDescription: descriptionMap[action],
+          decision: typeMap[action],
+          approverName: actor.full_name,
+          approverRole: request.stage?.name || 'Approver',
+          decisionDate: now,
+          approvalRemarks: comments || null,
+          rejectionReason: rejectionReason || null,
+          actionRequired: actionRequiredMap[action],
+          ctaText: 'View Request',
+          workflowStage: request.stage?.name || request.status,
+          nextStage: action === 'ESCALATE' ? nextStageLabel : (request.status === 'APPROVED' ? 'Fulfilment' : '—'),
+          pendingSince: request.submittedAt || request.createdAt,
+          pendingDays: Math.floor((now - new Date(request.submittedAt || request.createdAt)) / 86400000),
+        });
 
-          await sendMail(emailData);
-        }
-
-        // If escalated, also notify the next-stage approvers
-        if (action === 'ESCALATE' && request.stage?.id) {
-          const nextApprovers = await resolveStageApprovers(request.stage.id);
-          for (const approver of nextApprovers) {
-            const emailData = buildRequestStatusEmail({
-              request: { ...request, requesterEmail: requester?.email },
-              recipientEmail: approver.email,
-              recipientName: approver.name,
-              notificationType: 'ESCALATION',
-              emailAction: 'Request Escalated — Awaiting Your Review',
-              eventDescription:
-                `Financial request "${request.title}" has been escalated to your review stage by ${actor.full_name}.`,
-              decision: 'PENDING REVIEW',
-              approverName: null,
-              approverRole: null,
-              decisionDate: null,
-              approvalRemarks: comments || null,
-              actionRequired: 'Please review this escalated request and take the appropriate action.',
-              ctaText: 'Review Request',
-              workflowStage: request.stage?.name || request.status,
-              nextStage: 'Your Decision',
-              pendingSince: now,
-              pendingDays: 0,
-            });
-            await sendMail(emailData);
-          }
-        }
+        await sendMail(emailData);
       }
     } catch (err) {
       console.error('[requests] Failed to send request notification email:', err.message);
