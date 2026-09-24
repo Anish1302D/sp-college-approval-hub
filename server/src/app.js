@@ -55,7 +55,6 @@ export function createApp() {
         principalEmail: config.principalEmail,
       };
 
-      // Import mailer dynamically to avoid circular deps
       const { sendMail, verifySmtp } = await import('./mailer.js');
 
       try {
