@@ -41,6 +41,47 @@ export function createApp() {
     }
   });
 
+  // Temporary SMTP diagnostic — remove after confirming emails work
+  app.get('/health/smtp', async (_req, res) => {
+    const results = { smtp: {}, verify: null, send: null };
+    try {
+      results.smtp = {
+        host: config.smtp.host,
+        port: config.smtp.port,
+        secure: config.smtp.secure,
+        user: config.smtp.user ? `${config.smtp.user.slice(0, 4)}****` : '(empty)',
+        pass: config.smtp.pass ? `${config.smtp.pass.slice(0, 4)}****` : '(empty)',
+        from: config.smtp.from,
+        principalEmail: config.principalEmail,
+      };
+
+      // Import mailer dynamically to avoid circular deps
+      const { sendMail, verifySmtp } = await import('./mailer.js');
+
+      try {
+        await verifySmtp();
+        results.verify = 'OK';
+      } catch (err) {
+        results.verify = `FAILED: ${err.message}`;
+      }
+
+      try {
+        const info = await sendMail({
+          to: config.principalEmail,
+          subject: '[RENDER SMTP TEST] Email from live server',
+          html: '<h2>Render SMTP Working</h2><p>This email was sent from the live Render backend at ' + new Date().toISOString() + '</p>',
+        });
+        results.send = { ok: true, messageId: info.messageId, response: info.response };
+      } catch (err) {
+        results.send = { ok: false, error: err.message };
+      }
+
+      res.json(results);
+    } catch (err) {
+      res.status(500).json({ ...results, fatal: err.message });
+    }
+  });
+
   app.use('/api/auth', authRouter);
 
   // Everything below requires a signed-in user.
