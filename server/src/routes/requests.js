@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireRole } from '../auth.js';
-import { queryAll, withUser } from '../db.js';
+import { config } from '../config.js';
+import { pool, queryAll, withUser } from '../db.js';
+import { buildRequestStatusEmail } from '../emailTemplates.js';
 import { conflict, forbidden, notFound, unprocessable } from '../errors.js';
+import { sendMail } from '../mailer.js';
 import { REQUESTER_ROLES } from '../roles.js';
 import { seal, verifySeal } from '../signing.js';
 import { removeFile } from '../storage.js';
@@ -20,6 +23,198 @@ const STATUSES = [
 const NOT_CARRYABLE = ['REJECTED', 'CLOSED', 'FULFILLED', 'CARRIED_FORWARD'];
 const ATTACH_CLOSED = ['CLOSED', 'CARRIED_FORWARD'];
 const isUnderReview = (status) => status.startsWith('UNDER_');
+
+// ---------------------------------------------------------------------------
+// Email notifications (fire-and-forget)
+// ---------------------------------------------------------------------------
+
+const STAGE_LABELS = {
+  UNDER_PURCHASE_COMMITTEE_REVIEW: 'Purchase Committee Review',
+  UNDER_PRINCIPAL_REVIEW: 'Principal Review',
+  UNDER_CDC_REVIEW: 'CDC Review',
+  UNDER_FINAL_AUTHORITY_REVIEW: 'Final Authority Review',
+};
+
+/**
+ * Resolves the principal user (or falls back to the configured email).
+ * @returns {{ email: string, name: string }}
+ */
+async function resolvePrincipal() {
+  let email = config.principalEmail;
+  let name = 'Principal';
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.full_name, u.email FROM users u
+         JOIN user_roles ur ON ur.user_id = u.user_id
+         JOIN roles r ON r.role_id = ur.role_id
+        WHERE r.code = 'PRINCIPAL' AND u.is_active
+        LIMIT 1`,
+    );
+    if (rows.length > 0) {
+      name = rows[0].full_name;
+      email = config.principalEmail || rows[0].email;
+    }
+  } catch { /* use defaults */ }
+  return { email, name };
+}
+
+/**
+ * Resolve the approvers staffed at a particular workflow stage.
+ * @returns {Array<{ email: string, name: string }>}
+ */
+async function resolveStageApprovers(stageId) {
+  if (!stageId) return [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.full_name, u.email FROM stage_approvers sa
+         JOIN users u ON u.user_id = sa.user_id
+        WHERE sa.stage_id = $1 AND u.is_active`,
+      [stageId],
+    );
+    return rows.map((r) => ({ email: r.email, name: r.full_name }));
+  } catch { return []; }
+}
+
+/**
+ * Fire-and-forget: sends a request notification email.
+ * Errors are logged but never propagated — a mail failure must never
+ * affect the API response.
+ */
+function notifyRequestAsync({ request, actorId, action, comments, rejectionReason }) {
+  (async () => {
+    try {
+      // Resolve actor (requester / approver)
+      const { rows: actorRows } = await pool.query(
+        'SELECT full_name, email FROM users WHERE user_id = $1', [actorId],
+      );
+      const actor = actorRows[0];
+      if (!actor) return;
+
+      // Resolve the requester (person who raised the request)
+      const { rows: requesterRows } = await pool.query(
+        'SELECT full_name, email FROM users WHERE user_id = $1', [request.raisedBy?.id],
+      );
+      const requester = requesterRows[0];
+
+      const principal = await resolvePrincipal();
+      const now = new Date();
+
+      if (action === 'SUBMITTED') {
+        // ─── New submission → notify the first-stage approvers + principal ───
+        const approvers = await resolveStageApprovers(request.stage?.id);
+        const toEmail = approvers.length > 0
+          ? approvers.map((a) => a.email).join(', ')
+          : principal.email;
+
+        const emailData = buildRequestStatusEmail({
+          request: { ...request, requesterEmail: requester?.email },
+          recipientEmail: toEmail,
+          recipientName: approvers.length > 0 ? approvers[0].name : principal.name,
+          notificationType: 'NEW REQUEST',
+          emailAction: 'New Financial Request Submitted',
+          eventDescription:
+            `A new financial request "${request.title}" has been submitted by ${actor.full_name} ` +
+            `and is now awaiting review.`,
+          decision: 'PENDING REVIEW',
+          approverName: null,
+          approverRole: null,
+          decisionDate: null,
+          actionRequired: 'Please review this request and take the appropriate action.',
+          ctaText: 'Review Request',
+          workflowStage: request.stage?.name || 'Submitted',
+          nextStage: 'Committee / Principal Review',
+          pendingSince: now,
+          pendingDays: 0,
+        });
+
+        await sendMail(emailData);
+      } else if (['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'ESCALATE'].includes(action)) {
+        // ─── Decision → notify the requester ───
+        const typeMap = {
+          APPROVE: 'APPROVAL',
+          PARTIAL_APPROVE: 'PARTIAL APPROVAL',
+          REJECT: 'REJECTION',
+          ESCALATE: 'ESCALATION',
+        };
+        const actionMap = {
+          APPROVE: 'Request Fully Approved',
+          PARTIAL_APPROVE: 'Request Partially Approved',
+          REJECT: 'Request Rejected',
+          ESCALATE: 'Request Escalated to Next Stage',
+        };
+        const descriptionMap = {
+          APPROVE: `Your financial request "${request.title}" has been fully approved by ${actor.full_name}.`,
+          PARTIAL_APPROVE: `Your financial request "${request.title}" has been partially approved by ${actor.full_name}. Some items may have adjusted quantities or amounts.`,
+          REJECT: `Your financial request "${request.title}" has been rejected by ${actor.full_name}.`,
+          ESCALATE: `Your financial request "${request.title}" has been escalated to the next review stage by ${actor.full_name}.`,
+        };
+        const actionRequiredMap = {
+          APPROVE: 'No further action is required from you. The approved items will proceed to fulfilment.',
+          PARTIAL_APPROVE: 'Please review the approved quantities and amounts. Unapproved items may be revised and resubmitted.',
+          REJECT: 'Please review the rejection reason. You may revise and resubmit the request if needed.',
+          ESCALATE: 'Your request has been escalated for higher-level review. No action is required from you at this time.',
+        };
+
+        const nextStageLabel = STAGE_LABELS[request.status] || request.stage?.name || '—';
+
+        if (requester) {
+          const emailData = buildRequestStatusEmail({
+            request: { ...request, requesterEmail: requester.email },
+            recipientEmail: requester.email,
+            recipientName: requester.full_name,
+            notificationType: typeMap[action],
+            emailAction: actionMap[action],
+            eventDescription: descriptionMap[action],
+            decision: typeMap[action],
+            approverName: actor.full_name,
+            approverRole: request.stage?.name || 'Approver',
+            decisionDate: now,
+            approvalRemarks: comments || null,
+            rejectionReason: rejectionReason || null,
+            actionRequired: actionRequiredMap[action],
+            ctaText: 'View Request',
+            workflowStage: request.stage?.name || request.status,
+            nextStage: action === 'ESCALATE' ? nextStageLabel : (request.status === 'APPROVED' ? 'Fulfilment' : '—'),
+            pendingSince: request.submittedAt || request.createdAt,
+            pendingDays: Math.floor((now - new Date(request.submittedAt || request.createdAt)) / 86400000),
+          });
+
+          await sendMail(emailData);
+        }
+
+        // If escalated, also notify the next-stage approvers
+        if (action === 'ESCALATE' && request.stage?.id) {
+          const nextApprovers = await resolveStageApprovers(request.stage.id);
+          for (const approver of nextApprovers) {
+            const emailData = buildRequestStatusEmail({
+              request: { ...request, requesterEmail: requester?.email },
+              recipientEmail: approver.email,
+              recipientName: approver.name,
+              notificationType: 'ESCALATION',
+              emailAction: 'Request Escalated — Awaiting Your Review',
+              eventDescription:
+                `Financial request "${request.title}" has been escalated to your review stage by ${actor.full_name}.`,
+              decision: 'PENDING REVIEW',
+              approverName: null,
+              approverRole: null,
+              decisionDate: null,
+              approvalRemarks: comments || null,
+              actionRequired: 'Please review this escalated request and take the appropriate action.',
+              ctaText: 'Review Request',
+              workflowStage: request.stage?.name || request.status,
+              nextStage: 'Your Decision',
+              pendingSince: now,
+              pendingDays: 0,
+            });
+            await sendMail(emailData);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[requests] Failed to send request notification email:', err.message);
+    }
+  })();
+}
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -489,6 +684,9 @@ requestsRouter.post('/:id/submit', async (req, res) => {
     return requireDetail(db, requestId, req.user);
   });
 
+  // ── Send email notification (fire-and-forget) ──
+  notifyRequestAsync({ request: detail, actorId: req.user.id, action: 'SUBMITTED' });
+
   res.json(detail);
 });
 
@@ -620,6 +818,15 @@ requestsRouter.post('/:id/actions', async (req, res) => {
       ],
     );
     return { actionId: rows[0].action_id, request: await requireDetail(db, requestId, req.user) };
+  });
+
+  // ── Send email notification (fire-and-forget) ──
+  notifyRequestAsync({
+    request: result.request,
+    actorId: req.user.id,
+    action: body.action,
+    comments: body.comments,
+    rejectionReason: body.action === 'REJECT' ? body.rejectionReason : null,
   });
 
   res.status(201).json(result);
