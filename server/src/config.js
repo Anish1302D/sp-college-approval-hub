@@ -33,4 +33,16 @@ export const config = Object.freeze({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+
+  // SMTP email configuration
+  smtp: Object.freeze({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: (process.env.SMTP_SECURE ?? 'false') === 'true',
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from: process.env.SMTP_FROM ?? `"SP College Workflow" <${process.env.SMTP_USER ?? 'noreply@spcollege.edu.in'}>`,
+  }),
+  // Default principal email for issue notifications (demo)
+  principalEmail: process.env.PRINCIPAL_EMAIL ?? 'protonedge01@gmail.com',
 });

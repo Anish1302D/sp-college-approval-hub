@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { queryAll, withUser } from '../db.js';
+import { config } from '../config.js';
+import { pool, queryAll, withUser } from '../db.js';
+import { buildIssueCreatedEmail } from '../emailTemplates.js';
 import { conflict, forbidden, notFound, unprocessable } from '../errors.js';
+import { sendMail } from '../mailer.js';
 import { ISSUE_MANAGER_ROLES, hasAnyRole } from '../roles.js';
 import { flag, id, pagination, param } from '../validate.js';
 
@@ -151,6 +154,51 @@ issuesRouter.post('/', async (req, res) => {
     await addEvent(db, rows[0].issue_id, req.user.id, 'CREATED');
     return detail(db, rows[0].issue_id, req.user);
   });
+
+  // ── Send email notification to the Principal (fire-and-forget) ──
+  // Lookup is outside the transaction — a mail failure must never roll back
+  // the issue itself.
+  (async () => {
+    try {
+      // Fetch the raiser's details for the email
+      const { rows: raiserRows } = await pool.query(
+        'SELECT full_name, email FROM users WHERE user_id = $1',
+        [req.user.id],
+      );
+      const raiser = raiserRows[0];
+      if (!raiser) return;
+
+      // Resolve the principal: check config first, then look up from user_roles
+      let principalEmail = config.principalEmail;
+      let principalName = 'Principal';
+
+      const { rows: principalRows } = await pool.query(
+        `SELECT u.full_name, u.email FROM users u
+           JOIN user_roles ur ON ur.user_id = u.user_id
+           JOIN roles r ON r.role_id = ur.role_id
+          WHERE r.code = 'PRINCIPAL' AND u.is_active
+          LIMIT 1`,
+      );
+      if (principalRows.length > 0) {
+        principalName = principalRows[0].full_name;
+        // For demo, always use the configured email; in production, use the
+        // principal's actual email: principalRows[0].email
+        principalEmail = config.principalEmail || principalRows[0].email;
+      }
+
+      const emailData = buildIssueCreatedEmail({
+        issue: result,
+        raiser: { fullName: raiser.full_name, email: raiser.email },
+        principalEmail,
+        principalName,
+      });
+
+      await sendMail(emailData);
+    } catch (err) {
+      console.error('[issues] Failed to send issue-created email:', err.message);
+    }
+  })();
+
   res.status(201).location(`/api/issues/${result.id}`).json(result);
 });
 
