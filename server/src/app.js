@@ -30,58 +30,14 @@ export function createApp() {
   }));
   app.use(express.json({ limit: '100kb' }));
 
-  // Reports whether the API can reach the database.
+  // Reports whether the API can reach the database. Unauthenticated, so it
+  // says nothing about versions or configuration.
   app.get('/health', async (_req, res) => {
     try {
       await pool.query('SELECT 1');
-      res.json({
-        status: 'ok',
-        version: '1.0.1',
-        emailTransport: config.resendApiKey ? 'resend' : 'smtp',
-        hasResendKey: Boolean(config.resendApiKey),
-        hasSmtpUser: Boolean(config.smtp.user),
-        principalEmail: config.principalEmail,
-      });
-    } catch (err) {
-      res.status(503).json({ status: 'unavailable', error: err.message });
-    }
-  });
-
-  // Temporary diagnostic — remove after confirming emails work
-  app.get('/health/smtp', async (_req, res) => {
-    const results = {
-      primaryTransport: config.resendApiKey ? 'resend' : 'smtp',
-      resendKey: config.resendApiKey ? `${config.resendApiKey.slice(0, 8)}****` : '(not set)',
-      resendFrom: config.resendFrom,
-      smtpUser: config.smtp.user || '(not set)',
-      smtpHost: config.smtp.host,
-      smtpPort: config.smtp.port,
-      hasFallback: config.resendApiKey ? Boolean(config.smtp.user && config.smtp.pass) : Boolean(config.resendApiKey),
-      principalEmail: config.principalEmail,
-      verify: null,
-      send: null,
-    };
-    try {
-      const { sendMail, verifySmtp } = await import('./mailer.js');
-
-      try { await verifySmtp(); results.verify = 'OK'; }
-      catch (err) { results.verify = `FAILED: ${err.message}`; }
-
-      try {
-        const info = await sendMail({
-          to: config.principalEmail,
-          subject: '[TEST] Email from live server via ' + results.primaryTransport + (results.hasFallback ? ' (with fallback)' : ''),
-          html: '<h2>Email Working!</h2><p>Sent from server via <b>' + results.primaryTransport + '</b> at ' + new Date().toISOString() + '</p>' +
-                (results.hasFallback ? '<p><em>Fallback transport is available if primary fails.</em></p>' : ''),
-        });
-        results.send = { ok: true, messageId: info.messageId, response: info.response };
-      } catch (err) {
-        results.send = { ok: false, error: err.message, stack: err.stack };
-      }
-
-      res.json(results);
-    } catch (err) {
-      res.status(500).json({ ...results, fatal: err.message });
+      res.json({ status: 'ok' });
+    } catch {
+      res.status(503).json({ status: 'unavailable' });
     }
   });
 

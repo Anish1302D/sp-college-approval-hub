@@ -175,5 +175,26 @@ Connect the frontend, update the docs, and generate a PR summary.
 - The login page lists development accounts for convenience. That list and the
   seed password are compiled out of production builds — verified by searching
   the built bundle.
-- Not built: email delivery, returning a request for correction, the fulfilment
+- Not built: returning a request for correction, the fulfilment
   and closing steps, and deployment.
+
+## 2026-09-26
+
+### Prompt
+
+Once I create a new issue or log an issue the email does not go to the principal.
+For now I have set principal mail as protonedge01@gmail.com, also there is a format
+of email in the filestructure as well. Deploy it so that it will work on the deployed site as well.
+
+### Work Completed
+
+- **Email notification pipeline for issues:** Implemented automated email delivery
+  to the Principal when a new non-financial issue is logged (`POST /api/issues`).
+- **Resend HTTP API & SMTP fallback transport:** Configured Resend as the primary
+  transport on cloud hosts (such as Render) where outbound SMTP ports (465, 587)
+  are blocked, with automatic fallback between Resend and SMTP.
+- **Fail-fast timeouts:** Added connection and socket timeouts (5s) to nodemailer
+  transports so network/port restrictions fail immediately without hanging requests.
+- **Environment variables & sanitization:** Added `.trim()` parsing to credential
+  and email environment variables in `config.js` to safeguard against trailing newlines.
+- **Verified and deployed:** Tested both locally and on the deployed Render service.
