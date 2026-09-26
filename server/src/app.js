@@ -41,38 +41,36 @@ export function createApp() {
     }
   });
 
-  // Temporary SMTP diagnostic — remove after confirming emails work
+  // Temporary diagnostic — remove after confirming emails work
   app.get('/health/smtp', async (_req, res) => {
-    const results = { smtp: {}, verify: null, send: null };
+    const results = {
+      primaryTransport: config.resendApiKey ? 'resend' : 'smtp',
+      resendKey: config.resendApiKey ? `${config.resendApiKey.slice(0, 8)}****` : '(not set)',
+      resendFrom: config.resendFrom,
+      smtpUser: config.smtp.user || '(not set)',
+      smtpHost: config.smtp.host,
+      smtpPort: config.smtp.port,
+      hasFallback: config.resendApiKey ? Boolean(config.smtp.user && config.smtp.pass) : Boolean(config.resendApiKey),
+      principalEmail: config.principalEmail,
+      verify: null,
+      send: null,
+    };
     try {
-      results.smtp = {
-        host: config.smtp.host,
-        port: config.smtp.port,
-        secure: config.smtp.secure,
-        user: config.smtp.user ? `${config.smtp.user.slice(0, 4)}****` : '(empty)',
-        pass: config.smtp.pass ? `${config.smtp.pass.slice(0, 4)}****` : '(empty)',
-        from: config.smtp.from,
-        principalEmail: config.principalEmail,
-      };
-
       const { sendMail, verifySmtp } = await import('./mailer.js');
 
-      try {
-        await verifySmtp();
-        results.verify = 'OK';
-      } catch (err) {
-        results.verify = `FAILED: ${err.message}`;
-      }
+      try { await verifySmtp(); results.verify = 'OK'; }
+      catch (err) { results.verify = `FAILED: ${err.message}`; }
 
       try {
         const info = await sendMail({
           to: config.principalEmail,
-          subject: '[RENDER SMTP TEST] Email from live server',
-          html: '<h2>Render SMTP Working</h2><p>This email was sent from the live Render backend at ' + new Date().toISOString() + '</p>',
+          subject: '[TEST] Email from live server via ' + results.primaryTransport + (results.hasFallback ? ' (with fallback)' : ''),
+          html: '<h2>Email Working!</h2><p>Sent from server via <b>' + results.primaryTransport + '</b> at ' + new Date().toISOString() + '</p>' +
+                (results.hasFallback ? '<p><em>Fallback transport is available if primary fails.</em></p>' : ''),
         });
         results.send = { ok: true, messageId: info.messageId, response: info.response };
       } catch (err) {
-        results.send = { ok: false, error: err.message };
+        results.send = { ok: false, error: err.message, stack: err.stack };
       }
 
       res.json(results);

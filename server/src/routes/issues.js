@@ -160,31 +160,41 @@ issuesRouter.post('/', async (req, res) => {
   // the issue itself.
   (async () => {
     try {
+      console.log('[issues] Preparing issue-created email for issue', result.id);
+
       // Fetch the raiser's details for the email
       const { rows: raiserRows } = await pool.query(
         'SELECT full_name, email FROM users WHERE user_id = $1',
         [req.user.id],
       );
       const raiser = raiserRows[0];
-      if (!raiser) return;
+      if (!raiser) {
+        console.warn('[issues] Could not find raiser user', req.user.id, '— skipping email');
+        return;
+      }
+      console.log('[issues] Raiser:', raiser.full_name, raiser.email);
 
       // Resolve the principal: check config first, then look up from user_roles
       let principalEmail = config.principalEmail;
       let principalName = 'Principal';
 
-      const { rows: principalRows } = await pool.query(
-        `SELECT u.full_name, u.email FROM users u
-           JOIN user_roles ur ON ur.user_id = u.user_id
-           JOIN roles r ON r.role_id = ur.role_id
-          WHERE r.code = 'PRINCIPAL' AND u.is_active
-          LIMIT 1`,
-      );
-      if (principalRows.length > 0) {
-        principalName = principalRows[0].full_name;
-        // For demo, always use the configured email; in production, use the
-        // principal's actual email: principalRows[0].email
-        principalEmail = config.principalEmail || principalRows[0].email;
+      try {
+        const { rows: principalRows } = await pool.query(
+          `SELECT u.full_name, u.email FROM users u
+             JOIN user_roles ur ON ur.user_id = u.user_id
+             JOIN roles r ON r.role_id = ur.role_id
+            WHERE r.code = 'PRINCIPAL' AND u.is_active
+            LIMIT 1`,
+        );
+        if (principalRows.length > 0) {
+          principalName = principalRows[0].full_name;
+          principalEmail = config.principalEmail || principalRows[0].email;
+        }
+      } catch (dbErr) {
+        console.warn('[issues] Principal lookup failed, using config fallback:', dbErr.message);
       }
+
+      console.log('[issues] Sending issue-created email to', principalEmail, '(', principalName, ')');
 
       const emailData = buildIssueCreatedEmail({
         issue: result,
@@ -193,9 +203,11 @@ issuesRouter.post('/', async (req, res) => {
         principalName,
       });
 
-      await sendMail(emailData);
+      const info = await sendMail(emailData);
+      console.log('[issues] Issue-created email sent successfully:', JSON.stringify(info));
     } catch (err) {
       console.error('[issues] Failed to send issue-created email:', err.message);
+      console.error('[issues] Full error:', err.stack || err);
     }
   })();
 
