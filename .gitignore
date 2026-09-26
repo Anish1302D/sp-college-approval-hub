@@ -7,3 +7,6 @@ dist/
 # API attachments written at runtime
 server/uploads/
 .neon
+
+# Local private credentials files
+*PRIVATE*
