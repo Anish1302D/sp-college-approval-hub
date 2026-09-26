@@ -36,16 +36,16 @@ export const config = Object.freeze({
 
   // SMTP email configuration (local dev fallback)
   smtp: Object.freeze({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    host: (process.env.SMTP_HOST ?? 'smtp.gmail.com').trim(),
     port: Number(process.env.SMTP_PORT ?? 465),
-    secure: (process.env.SMTP_SECURE ?? 'true') === 'true',
-    user: process.env.SMTP_USER ?? '',
-    pass: process.env.SMTP_PASS ?? '',
-    from: process.env.SMTP_FROM ?? `"SP College Workflow" <${process.env.SMTP_USER ?? 'noreply@spcollege.edu.in'}>`,
+    secure: (process.env.SMTP_SECURE ?? 'true').trim() === 'true',
+    user: (process.env.SMTP_USER ?? '').trim(),
+    pass: (process.env.SMTP_PASS ?? '').trim(),
+    from: (process.env.SMTP_FROM ?? `"SP College Workflow" <${process.env.SMTP_USER ?? 'noreply@spcollege.edu.in'}>`).trim(),
   }),
   // Resend HTTP API (for cloud hosts that block SMTP ports)
-  resendApiKey: process.env.RESEND_API_KEY ?? '',
-  resendFrom: process.env.RESEND_FROM ?? 'SP College Workflow <onboarding@resend.dev>',
+  resendApiKey: (process.env.RESEND_API_KEY ?? '').trim(),
+  resendFrom: (process.env.RESEND_FROM ?? 'SP College Workflow <onboarding@resend.dev>').trim(),
   // Default principal email for issue notifications (demo)
-  principalEmail: process.env.PRINCIPAL_EMAIL ?? 'protonedge01@gmail.com',
+  principalEmail: (process.env.PRINCIPAL_EMAIL ?? 'protonedge01@gmail.com').trim(),
 });
