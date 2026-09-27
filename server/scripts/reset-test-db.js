@@ -51,6 +51,7 @@ export async function resetTestDatabase() {
         throw new Error(`failed loading ${path.relative(root, file)}: ${err.message}`);
       }
     }
+    await db.query("ALTER ROLE app_user LOGIN PASSWORD '37a5cddf3c5b224065fd881544ec5bc407d8342262a40918'");
     return files.length;
   } finally {
     await db.end();

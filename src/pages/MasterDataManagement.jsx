@@ -149,7 +149,7 @@ export const MasterDataManagement = () => {
   const closeModal = () => { setModal(null); refresh(); };
 
   const deleteDept = async (dept) => {
-    if (!window.confirm(`Delete department "${dept.name}"? This also deletes all its courses.`)) return;
+    if (!window.confirm(`Delete department "${dept.name}"? Only empty departments with no associated courses or requests can be deleted.`)) return;
     await run(() => api(`/api/admin/departments/${dept.id}`, { method: 'DELETE' }), `${dept.name} deleted`);
   };
 

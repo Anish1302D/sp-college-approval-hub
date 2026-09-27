@@ -3,15 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { money, quantity } from '../../api/format';
 import { StatusBadge } from '../ui/StatusBadge';
 
-// When the line is the "Other (specify)" sentinel, the custom item name is
-// stored as "[Custom item: <name>]" at the front of remarks.
-// This helper extracts it so the name renders where the budget item name would.
-function parseCustomItem(item, remarks) {
-  if (item?.code !== 'OTHER') return { displayName: item?.name ?? '—', displayRemarks: remarks };
-  const match = /^\[Custom item: ([^\]]+)\](?:\s*—\s*)?(.*)$/s.exec(remarks ?? '');
-  if (match) return { displayName: match[1].trim(), displayRemarks: match[2].trim() || null };
-  return { displayName: 'Other (custom item)', displayRemarks: remarks };
-}
+import { parseCustomItem } from '../../utils/customItem';
 
 /**
  * Line items with requested, approved and unapproved figures side by side —

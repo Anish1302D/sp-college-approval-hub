@@ -17,5 +17,8 @@ INSERT INTO schema_migrations (filename) VALUES
     ('20260902T180000_baseline.sql'),
     ('20260902T193000_add_sqlstate_error_codes.sql'),
     ('20260911T120000_backend_rls_fixes.sql'),
-    ('20260912T090000_indian_number_format.sql')
+    ('20260912T090000_indian_number_format.sql'),
+    ('20260927T120000_other_sentinel_items.sql'),
+    ('20260927T121500_seed_courses.sql'),
+    ('20260927T200000_add_attachment_storage_backend.sql')
 ON CONFLICT (filename) DO NOTHING;

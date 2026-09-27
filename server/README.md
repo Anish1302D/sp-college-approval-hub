@@ -10,7 +10,7 @@ one call to `fn_record_action`, not logic re-implemented here.
 
 ## Setup
 
-Requires Node 20+ and the database from `db/` running (Docker on port 5433 by
+Requires Node 22+ and the database from `db/` running (Docker on port 5433 by
 default).
 
 1. Give `app_user` a login password on the database:

@@ -36,7 +36,7 @@ function acceptedFile(req) {
   if (!req.file) {
     throw new HttpError(400, 'Attach a file in the "file" field');
   }
-  const type = detectType(req.file.buffer, req.file.mimetype);
+  const type = detectType(req.file.buffer, req.file.mimetype, req.file.originalname);
   if (!type) {
     throw new HttpError(415, 'Only PDF, PNG, JPEG, Word (.docx) and Excel (.xlsx) files are accepted', {
       details: { accepted: ACCEPTED_TYPES },
@@ -52,17 +52,17 @@ function acceptedFile(req) {
  */
 async function store(req, parent, authorise) {
   const type = acceptedFile(req);
-  let storagePath;
+  let savedFile;
   try {
     return await withUser(req.user.id, async (db) => {
       await authorise(db);
-      storagePath = await saveFile(req.file.buffer, type.ext);
+      savedFile = await saveFile(req.file.buffer, type.ext);
       const { rows } = await db.query(
         `INSERT INTO attachments (request_id, issue_id, file_name, mime_type, size_bytes,
-                                  storage_path, uploaded_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING attachment_id`,
+                                  storage_path, storage_backend, uploaded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING attachment_id`,
         [parent.requestId ?? null, parent.issueId ?? null, cleanFileName(req.file.originalname),
-          type.mime, req.file.size, storagePath, req.user.id],
+          type.mime, req.file.size, savedFile.storagePath, savedFile.backend, req.user.id],
       );
       return (await db.query(
         `SELECT a.*, u.full_name AS uploaded_by_name FROM attachments a
@@ -71,7 +71,7 @@ async function store(req, parent, authorise) {
       )).rows[0];
     });
   } catch (err) {
-    if (storagePath) await removeFile(storagePath);
+    if (savedFile?.storagePath) await removeFile(savedFile.storagePath, savedFile.backend);
     throw err;
   }
 }
@@ -112,12 +112,13 @@ attachmentsRouter.get('/attachments/:id', async (req, res) => {
   const attachmentId = param(req, 'id');
   const row = await withUser(req.user.id, async (db) =>
     (await db.query(
-      'SELECT file_name, mime_type, storage_path FROM attachments WHERE attachment_id = $1',
+      'SELECT file_name, mime_type, storage_path, storage_backend FROM attachments WHERE attachment_id = $1',
       [attachmentId],
     )).rows[0]);
   if (!row) throw notFound('Attachment not found');
 
-  if (USE_DRIVE) {
+  const isDrive = row.storage_backend === 'drive' || (USE_DRIVE && !row.storage_path.includes('/'));
+  if (isDrive) {
     // Stream from Google Drive through the API server so the download stays
     // authenticated — the Drive file is private to the service account.
     try {
@@ -145,9 +146,9 @@ attachmentsRouter.get('/attachments/:id', async (req, res) => {
 // still open.
 attachmentsRouter.delete('/attachments/:id', async (req, res) => {
   const attachmentId = param(req, 'id');
-  const storagePath = await withUser(req.user.id, async (db) => {
+  const fileInfo = await withUser(req.user.id, async (db) => {
     const { rows } = await db.query(
-      `SELECT a.storage_path, a.uploaded_by, r.current_status AS request_status, i.status AS issue_status
+      `SELECT a.storage_path, a.storage_backend, a.uploaded_by, r.current_status AS request_status, i.status AS issue_status
          FROM attachments a
          LEFT JOIN requests r ON r.request_id = a.request_id
          LEFT JOIN issues   i ON i.issue_id   = a.issue_id
@@ -163,8 +164,8 @@ attachmentsRouter.delete('/attachments/:id', async (req, res) => {
       throw conflict('Files on a submitted request or a closed issue are part of the record');
     }
     await db.query('DELETE FROM attachments WHERE attachment_id = $1', [attachmentId]);
-    return a.storage_path;
+    return { storagePath: a.storage_path, backend: a.storage_backend };
   });
-  await removeFile(storagePath);
+  await removeFile(fileInfo.storagePath, fileInfo.backend);
   res.status(204).end();
 });

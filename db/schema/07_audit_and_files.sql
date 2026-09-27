@@ -10,6 +10,7 @@ CREATE TABLE attachments (
     mime_type       TEXT,
     size_bytes      BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
     storage_path    TEXT NOT NULL,                         -- key in S3/MinIO/local
+    storage_backend TEXT NOT NULL DEFAULT 'local',
     uploaded_by     UUID NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

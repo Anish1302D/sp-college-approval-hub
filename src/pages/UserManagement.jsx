@@ -220,23 +220,27 @@ function UserModal({ user, roles, onClose, onSaved }) {
 
           {/* Active status (edit only) */}
           {isEdit && (
-            <label className="flex items-center gap-3 cursor-pointer select-none">
-              <span
-                className={`relative inline-flex w-10 h-5 rounded-full transition-colors ${
+            <div className="flex items-center gap-3 select-none">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.isActive}
+                aria-label={`Active status for ${form.fullName || 'user'}`}
+                onClick={() => set({ isActive: !form.isActive })}
+                className={`relative inline-flex w-10 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:ring-offset-2 ${
                   form.isActive ? 'bg-indigo-600' : 'bg-gray-300'
                 }`}
-                onClick={() => set({ isActive: !form.isActive })}
               >
                 <span
                   className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
                     form.isActive ? 'translate-x-5' : ''
                   }`}
                 />
-              </span>
+              </button>
               <span className="text-sm text-gray-700 font-medium">
                 Account {form.isActive ? 'active' : 'deactivated'}
               </span>
-            </label>
+            </div>
           )}
         </div>
 

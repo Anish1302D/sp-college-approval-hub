@@ -164,6 +164,10 @@ adminRouter.patch('/users/:id', async (req, res) => {
   const userId = req.params.id;
   const body = updateUserSchema.parse(req.body);
 
+  if (body.isActive === false && userId === req.user.id) {
+    throw new HttpError(400, 'You cannot deactivate your own account');
+  }
+
   // Hash outside the transaction for the same reason as above.
   const hash = body.password ? await bcrypt.hash(body.password, BCRYPT_ROUNDS) : undefined;
 
@@ -310,10 +314,25 @@ adminRouter.patch('/departments/:id', async (req, res) => {
 adminRouter.delete('/departments/:id', async (req, res) => {
   const deptId = Number(req.params.id);
   await withUser(req.user.id, async (db) => {
-    const { rowCount } = await db.query(
-      'DELETE FROM departments WHERE department_id = $1', [deptId],
+    const { rows: deptRows } = await db.query(
+      'SELECT department_id FROM departments WHERE department_id = $1', [deptId],
     );
-    if (!rowCount) throw notFound('Department not found');
+    if (!deptRows.length) throw notFound('Department not found');
+
+    const { rows: usageRows } = await db.query(
+      `SELECT EXISTS (SELECT 1 FROM courses WHERE department_id = $1) AS has_courses,
+              EXISTS (
+                SELECT 1 FROM requests r
+                LEFT JOIN courses c ON c.course_id = r.course_id
+                WHERE r.department_id = $1 OR c.department_id = $1
+              ) AS has_requests`,
+      [deptId],
+    );
+    if (usageRows[0]?.has_courses || usageRows[0]?.has_requests) {
+      throw conflict('Cannot delete department: it contains courses or associated procurement requests. Reassign or remove them first.');
+    }
+
+    await db.query('DELETE FROM departments WHERE department_id = $1', [deptId]);
   });
   res.status(204).end();
 });

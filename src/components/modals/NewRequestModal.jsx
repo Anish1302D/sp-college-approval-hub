@@ -6,6 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useApi } from '../../hooks/useApi';
 import { ACCEPT } from '../ui/Attachments';
 import { Modal } from '../ui/Modal';
+import { serializeCustomItem } from '../../utils/customItem';
 
 // A plain counter for React keys. crypto.randomUUID() would be neater, but it
 // only exists on HTTPS or localhost pages, and an intranet server reached over
@@ -146,7 +147,7 @@ export const NewRequestModal = () => {
       const item = itemById.get(l.budgetItemId);
       const lineIsOther = isOther(item?.code ?? '');
       const remarks = lineIsOther
-        ? `[Custom item: ${l.customItemName.trim()}]${l.remarks.trim() ? ` — ${l.remarks.trim()}` : ''}`
+        ? serializeCustomItem(l.customItemName, l.remarks)
         : (l.remarks.trim() || undefined);
       return {
         budgetItemId: Number(l.budgetItemId),
