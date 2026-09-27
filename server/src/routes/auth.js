@@ -70,9 +70,40 @@ authRouter.post('/logout', requireAuth, (_req, res) => {
   res.status(204).end();
 });
 
+// Self-service password change. Requires knowing the current password.
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(8).max(200),
+});
+
+authRouter.post('/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+  const { rows } = await anonQuery(
+    'SELECT password_hash FROM users WHERE user_id = $1 AND is_active',
+    [req.user.id],
+  );
+  const account = rows[0];
+  if (!account) throw new HttpError(401, 'Account not found');
+
+  const valid = await bcrypt.compare(currentPassword, account.password_hash);
+  if (!valid) throw new HttpError(401, 'Current password is incorrect');
+
+  const newHash = await bcrypt.hash(newPassword, 12);
+  await withUser(req.user.id, (db) =>
+    db.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE user_id = $2',
+      [newHash, req.user.id],
+    ),
+  );
+
+  res.status(204).end();
+});
+
 authRouter.get('/me', requireAuth, async (req, res) => {
   res.json(await describe(req.user.id));
 });
+
 
 async function describe(userId) {
   const { rows } = await anonQuery(

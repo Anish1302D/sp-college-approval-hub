@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  AlertCircle, BarChart3, BellRing, Box, ClipboardCheck, FileDown, FileText, FolderArchive,
+  AlertCircle, BarChart3, BellRing, BookOpen, Box, ClipboardCheck, FileDown, FileText, FolderArchive,
   GraduationCap, History, LayoutDashboard, LogOut, Receipt, Settings, ShieldAlert,
   UserCircle, Users,
 } from 'lucide-react';
@@ -46,6 +46,7 @@ export const NAV = {
     { title: 'Operations', items: [
       { id: 'admin-dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'user-management', label: 'User management', icon: Users },
+      { id: 'master-data', label: 'Departments & courses', icon: BookOpen },
       { id: 'requests-all', label: 'All requests', icon: FileText },
       { id: 'non-financial-requests', label: 'Faculty issues', icon: AlertCircle, badge: 'issues' },
       { id: 'inventory', label: 'Inventory', icon: Box },

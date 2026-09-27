@@ -22,6 +22,7 @@ import { InventoryManagement } from './pages/InventoryManagement';
 import { PurchaseBills } from './pages/PurchaseBills';
 import { DataExports } from './pages/DataExports';
 import { ReportsAnalytics } from './pages/ReportsAnalytics';
+import { MasterDataManagement } from './pages/MasterDataManagement';
 import { NotificationsCenter } from './pages/NotificationsCenter';
 import { SettingsPreferences } from './pages/SettingsPreferences';
 import { UserManagement } from './pages/UserManagement';
@@ -41,6 +42,7 @@ const PAGES = {
   profile: Profile,
   'admin-dashboard': AdminClerkDashboard,
   'user-management': UserManagement,
+  'master-data': MasterDataManagement,
   inventory: InventoryManagement,
   'purchase-bills': PurchaseBills,
   exports: DataExports,

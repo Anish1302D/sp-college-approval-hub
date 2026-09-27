@@ -243,3 +243,23 @@ Multi-step improvement plan on the `revisit` branch:
 - `ItemsTable.jsx` — added `parseCustomItem()` helper that strips the `[Custom item: ...]` prefix from remarks and displays it as the proper item name. Downstream (approval screens, history) shows the user-typed name everywhere.
 - `RequestDetailModal.jsx` — subtitle and department/course tiles now read `extra.custom*` values and append `(other)` label for clarity.
 
+
+### Step 3 Work Completed - Fix Courses + Master Data Management
+
+- Migration 20260927T121500_seed_courses.sql: inserted 11 courses across 4 departments (CS, CHEM, PHY, ADMIN). Idempotent.
+- Admin API: GET/POST/PATCH/DELETE /api/admin/departments and /api/admin/courses added to admin.js
+- New page MasterDataManagement.jsx: accordion list of departments with courses, inline CRUD, changes immediately visible in NewRequestModal.
+- Wired into admin sidebar and App.jsx.
+
+### Step 4 Work Completed - DecisionPanel persistent color coding
+
+- DecisionPanel.jsx rewritten. All 4 action buttons are persistently color-coded before selection: Approve=green, Partial=teal, Reject=red, Escalate=indigo. Small colored dot as semantic cue on unselected state. On selection: full solid color with shadow. Confirm button matches action color.
+
+### Step 5 Work Completed - UI/UX pass
+
+- Profile.jsx rewritten: color-coded role badges, self-service password change accordion (calls POST /api/auth/change-password), gradient avatar, improved hierarchy.
+- POST /api/auth/change-password added to auth.js: verifies current password, hashes new password (bcrypt cost 12), returns 204.
+- SettingsPreferences.jsx rewritten: visual flow diagram with color-coded stage cards, connector arrows, amount thresholds, amber info callout.
+- ReviewQueue.jsx improved: live count badge from /api/dashboard, better spacing.
+- DecisionsArchive.jsx improved: visual legend (Approve/Partial/Reject/CarriedForward icons), empty-state hint.
+- Decision toasts: useAction() already wires CHOICES[action].done toast on every decision confirm.

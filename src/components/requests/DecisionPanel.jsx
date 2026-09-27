@@ -4,11 +4,42 @@ import { api } from '../../api/client';
 import { money, quantity } from '../../api/format';
 import { useAction } from '../../hooks/useApi';
 
+// Persistent (unselected) styles give approvers an immediate visual cue
+// of what each button does BEFORE they click. Selected styles are bolder.
 const CHOICES = {
-  APPROVE: { label: 'Approve', icon: CheckCircle2, tone: 'bg-emerald-600 hover:bg-emerald-700', done: 'Request approved' },
-  PARTIAL_APPROVE: { label: 'Partially approve', icon: Scissors, tone: 'bg-teal-600 hover:bg-teal-700', done: 'Partial approval recorded' },
-  REJECT: { label: 'Reject', icon: XCircle, tone: 'bg-red-600 hover:bg-red-700', done: 'Request rejected' },
-  ESCALATE: { label: 'Escalate', icon: Send, tone: 'bg-indigo-600 hover:bg-indigo-700', done: 'Escalated to the next authority' },
+  APPROVE: {
+    label: 'Approve',
+    icon: CheckCircle2,
+    // Unselected: soft green ghost; Selected: solid green
+    idle: 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300',
+    active: 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 shadow-emerald-200 shadow-md',
+    dot: 'bg-emerald-500',
+    done: 'Request approved',
+  },
+  PARTIAL_APPROVE: {
+    label: 'Partial approve',
+    icon: Scissors,
+    idle: 'bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 hover:border-teal-300',
+    active: 'bg-teal-600 hover:bg-teal-700 text-white border border-teal-600 shadow-teal-200 shadow-md',
+    dot: 'bg-teal-500',
+    done: 'Partial approval recorded',
+  },
+  REJECT: {
+    label: 'Reject',
+    icon: XCircle,
+    idle: 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 hover:border-red-300',
+    active: 'bg-red-600 hover:bg-red-700 text-white border border-red-600 shadow-red-200 shadow-md',
+    dot: 'bg-red-500',
+    done: 'Request rejected',
+  },
+  ESCALATE: {
+    label: 'Escalate',
+    icon: Send,
+    idle: 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300',
+    active: 'bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-600 shadow-indigo-200 shadow-md',
+    dot: 'bg-indigo-500',
+    done: 'Escalated to the next authority',
+  },
 };
 
 // Whole paise, so the preview total adds up the way the server's NUMERIC does.
@@ -75,14 +106,15 @@ export const DecisionPanel = ({ request }) => {
   const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400';
 
   return (
-    <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200 space-y-3">
+    <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200 space-y-4">
       <div>
         <h4 className="text-xs font-bold text-gray-900">Your decision — {request.stage.name}</h4>
-        <p className="text-[11px] text-gray-500">
+        <p className="text-[11px] text-gray-500 mt-0.5">
           {request.stage.isFinal ? 'This is the final stage; there is no further escalation.' : 'Escalating sends the request to the next authority.'}
         </p>
       </div>
 
+      {/* Action picker — each button is persistently color-coded */}
       <div className="flex flex-wrap gap-2">
         {request.permissions.actions.map((code) => {
           const c = CHOICES[code];
@@ -93,9 +125,14 @@ export const DecisionPanel = ({ request }) => {
               key={code}
               onClick={() => setAction(selected ? null : code)}
               aria-pressed={selected}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${selected ? `${c.tone} text-white` : 'bg-white text-gray-700 border border-gray-200 hover:border-gray-300'}`}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all duration-150 ${
+                selected ? c.active : c.idle
+              }`}
             >
-              <Icon className="w-3.5 h-3.5" /> {c.label}
+              {/* Persistent color dot when unselected so meaning is clear */}
+              {!selected && <span className={`w-2 h-2 rounded-full ${c.dot} shrink-0`} />}
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              {c.label}
             </button>
           );
         })}
@@ -148,10 +185,10 @@ export const DecisionPanel = ({ request }) => {
           {problems.length > 0 && (
             <ul className="text-[11px] text-red-600 list-disc pl-4 space-y-0.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
           )}
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button onClick={() => setAction(null)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100">Cancel</button>
             <button onClick={submit} disabled={busy || problems.length > 0}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 ${CHOICES[action].tone}`}>
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 ${CHOICES[action].active}`}>
               {busy ? 'Recording…' : `Confirm: ${CHOICES[action].label.toLowerCase()}`}
             </button>
           </div>

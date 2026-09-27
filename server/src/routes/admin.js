@@ -254,3 +254,133 @@ adminRouter.post('/users/:id/reactivate', async (req, res) => {
 
   res.json(await userDetail(userId));
 });
+
+// ---------------------------------------------------------------------------
+// Departments — CRUD
+// ---------------------------------------------------------------------------
+
+const deptSchema = z.object({
+  code: z.string().trim().toUpperCase().min(1).max(20).regex(/^[A-Z0-9_-]+$/, 'Code must be letters, numbers or hyphens'),
+  name: z.string().trim().min(2).max(200),
+});
+
+adminRouter.get('/departments', async (_req, res) => {
+  const { rows } = await anonQuery(
+    `SELECT d.department_id, d.code, d.name,
+            COUNT(c.course_id)::int AS course_count
+       FROM departments d
+       LEFT JOIN courses c ON c.department_id = d.department_id
+      GROUP BY d.department_id ORDER BY d.name`,
+  );
+  res.json(rows.map((r) => ({ id: r.department_id, code: r.code, name: r.name, courseCount: r.course_count })));
+});
+
+adminRouter.post('/departments', async (req, res) => {
+  const body = deptSchema.parse(req.body);
+  const result = await withUser(req.user.id, async (db) => {
+    const { rows } = await db.query(
+      `INSERT INTO departments (code, name) VALUES ($1, $2) RETURNING department_id, code, name`,
+      [body.code, body.name],
+    );
+    return rows[0];
+  });
+  res.status(201).json({ id: result.department_id, code: result.code, name: result.name, courseCount: 0 });
+});
+
+adminRouter.patch('/departments/:id', async (req, res) => {
+  const deptId = Number(req.params.id);
+  const body = deptSchema.partial().parse(req.body);
+  const result = await withUser(req.user.id, async (db) => {
+    const sets = []; const vals = [];
+    const push = (col, val) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+    if (body.code !== undefined) push('code', body.code);
+    if (body.name !== undefined) push('name', body.name);
+    if (!sets.length) throw new HttpError(400, 'Nothing to update');
+    vals.push(deptId);
+    const { rows, rowCount } = await db.query(
+      `UPDATE departments SET ${sets.join(', ')} WHERE department_id = $${vals.length} RETURNING department_id, code, name`,
+      vals,
+    );
+    if (!rowCount) throw notFound('Department not found');
+    return rows[0];
+  });
+  res.json({ id: result.department_id, code: result.code, name: result.name });
+});
+
+adminRouter.delete('/departments/:id', async (req, res) => {
+  const deptId = Number(req.params.id);
+  await withUser(req.user.id, async (db) => {
+    const { rowCount } = await db.query(
+      'DELETE FROM departments WHERE department_id = $1', [deptId],
+    );
+    if (!rowCount) throw notFound('Department not found');
+  });
+  res.status(204).end();
+});
+
+// ---------------------------------------------------------------------------
+// Courses — CRUD (scoped to a department)
+// ---------------------------------------------------------------------------
+
+const courseSchema = z.object({
+  departmentId: z.number().int().positive(),
+  code: z.string().trim().toUpperCase().min(1).max(30).regex(/^[A-Z0-9_-]+$/, 'Code must be letters, numbers or hyphens'),
+  name: z.string().trim().min(2).max(200),
+});
+
+adminRouter.get('/courses', async (req, res) => {
+  const { departmentId } = z.object({ departmentId: z.coerce.number().int().positive().optional() }).parse(req.query);
+  const { rows } = await anonQuery(
+    `SELECT c.course_id, c.department_id, c.code, c.name, d.name AS dept_name
+       FROM courses c JOIN departments d ON d.department_id = c.department_id
+      WHERE $1::int IS NULL OR c.department_id = $1
+      ORDER BY d.name, c.name`,
+    [departmentId ?? null],
+  );
+  res.json(rows.map((r) => ({ id: r.course_id, departmentId: r.department_id, deptName: r.dept_name, code: r.code, name: r.name })));
+});
+
+adminRouter.post('/courses', async (req, res) => {
+  const body = courseSchema.parse(req.body);
+  const result = await withUser(req.user.id, async (db) => {
+    const dept = await db.query('SELECT 1 FROM departments WHERE department_id = $1', [body.departmentId]);
+    if (!dept.rowCount) throw notFound('Department not found');
+    const { rows } = await db.query(
+      `INSERT INTO courses (department_id, code, name) VALUES ($1, $2, $3)
+       RETURNING course_id, department_id, code, name`,
+      [body.departmentId, body.code, body.name],
+    );
+    return rows[0];
+  });
+  res.status(201).json({ id: result.course_id, departmentId: result.department_id, code: result.code, name: result.name });
+});
+
+adminRouter.patch('/courses/:id', async (req, res) => {
+  const courseId = Number(req.params.id);
+  const body = courseSchema.omit({ departmentId: true }).partial().parse(req.body);
+  const result = await withUser(req.user.id, async (db) => {
+    const sets = []; const vals = [];
+    const push = (col, val) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+    if (body.code !== undefined) push('code', body.code);
+    if (body.name !== undefined) push('name', body.name);
+    if (!sets.length) throw new HttpError(400, 'Nothing to update');
+    vals.push(courseId);
+    const { rows, rowCount } = await db.query(
+      `UPDATE courses SET ${sets.join(', ')} WHERE course_id = $${vals.length} RETURNING course_id, department_id, code, name`,
+      vals,
+    );
+    if (!rowCount) throw notFound('Course not found');
+    return rows[0];
+  });
+  res.json({ id: result.course_id, departmentId: result.department_id, code: result.code, name: result.name });
+});
+
+adminRouter.delete('/courses/:id', async (req, res) => {
+  const courseId = Number(req.params.id);
+  await withUser(req.user.id, async (db) => {
+    const { rowCount } = await db.query('DELETE FROM courses WHERE course_id = $1', [courseId]);
+    if (!rowCount) throw notFound('Course not found');
+  });
+  res.status(204).end();
+});
+
