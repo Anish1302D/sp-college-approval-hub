@@ -263,3 +263,19 @@ Multi-step improvement plan on the `revisit` branch:
 - ReviewQueue.jsx improved: live count badge from /api/dashboard, better spacing.
 - DecisionsArchive.jsx improved: visual legend (Approve/Partial/Reject/CarriedForward icons), empty-state hint.
 - Decision toasts: useAction() already wires CHOICES[action].done toast on every decision confirm.
+
+### Fix: PDF Attachments vanish on Render (Google Drive storage backend)
+
+**Root cause confirmed:** Render's ephemeral filesystem wipes the container's writable layer on every restart/redeploy. Uploaded files were written to a local `uploads/` folder, DB row was inserted (201 success), but the physical file was gone after any restart. Principal downloads returned 410 Gone.
+
+**What was NOT broken:** Multer field name (`file` matches on both sides), file size limits (10MB), PDF magic-byte detection, canAttach permission gate for HEAD role, RLS attachments_insert policy.
+
+**Fix - Google Drive backend:**
+- `server/src/storage.js` rewritten: when `GDRIVE_CREDENTIALS` + `GDRIVE_FOLDER_ID` env vars are both set, all file I/O goes to Google Drive via a Service Account (`googleapis` npm package). When absent, falls back to local disk for development.
+- `saveFile(buffer, ext)` uploads buffer to Drive, stores the Drive file ID as `storage_path` in DB.
+- `streamFromDrive(fileId, res, fileName, mimeType)` pipes the file from Drive directly to the Express response.
+- `server/src/routes/attachments.js`: download handler checks `USE_DRIVE` flag; uses `streamFromDrive` on Drive, `res.download` on local disk.
+- `server/src/config.js`: added optional `gDriveCredentials` and `gDriveFolderId` config fields.
+- `server/.env.example`: documented both new vars with generation commands.
+- `docs/GOOGLE_DRIVE_SETUP.md`: 7-step guide (Cloud project, Drive API, Service Account, folder share, base64 encode, Render env vars, verify).
+- Also fixed secondary bug: `detectType()` now byte-sniffs if declared MIME is wrong (e.g. `application/octet-stream` PDFs from some browsers).
