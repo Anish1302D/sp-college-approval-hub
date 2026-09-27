@@ -1,5 +1,57 @@
 # Google Drive Storage — Setup Guide
 
+---
+
+## ✅ What's already done (code is deployed on `revisit`)
+
+- `storage.js` rewired — uploads go to Drive when env vars are set
+- Download handler streams files back from Drive through the API
+- `googleapis` npm package installed
+- `docs/GOOGLE_DRIVE_SETUP.md` (this file) written with full steps
+
+---
+
+## 🔲 What YOU still need to do (one-time, ~15 minutes)
+
+> **Code is done. These are only manual clicks in Google and Render.**
+
+- [ ] **1. Go to** [console.cloud.google.com](https://console.cloud.google.com) → create a new project (free)
+- [ ] **2.** APIs & Services → Library → search **"Google Drive API"** → **Enable**
+- [ ] **3.** APIs & Services → Credentials → **Create Credentials → Service Account**
+  - Name it anything (e.g. `spc-attachments`) → Create
+  - Open the service account → **Keys tab → Add Key → JSON** → file downloads
+- [ ] **4.** Open [drive.google.com](https://drive.google.com) → **New folder** (e.g. `SPC Attachments`)
+  - Right-click folder → **Share** → paste the service account email (from `"client_email"` inside the JSON file) → set **Editor** → Send
+  - Copy the **folder ID** from the URL:
+    `https://drive.google.com/drive/folders/` **`THIS_PART_IS_THE_ID`**
+- [ ] **5.** Run this in PowerShell to convert the JSON key to a single base64 line:
+  ```powershell
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("path\to\key.json"))
+  ```
+  Copy the output (long string, no spaces).
+- [ ] **6.** In the **Render dashboard** → your web service → **Environment** → add:
+
+  | Variable | Value |
+  |---|---|
+  | `GDRIVE_CREDENTIALS` | the base64 string from step 5 |
+  | `GDRIVE_FOLDER_ID` | the folder ID from step 4 |
+
+  → **Save changes** (Render will redeploy automatically)
+- [ ] **7. Test it:**
+  - Log in as a Head → open a submitted request → attach a PDF
+  - Trigger a Render redeploy (push any commit, or click Manual Deploy)
+  - Log in as Principal → open the request → click Download
+  - File should download ✅ (it now lives in Drive, not the container)
+
+---
+
+> **Local dev:** Leave both vars unset in your `.env` file. The server falls
+> back to the local `uploads/` folder — nothing breaks.
+
+---
+
+## Full step-by-step (with screenshots guidance)
+
 Attachments uploaded through the Approval Hub are stored in Google Drive
 when `GDRIVE_CREDENTIALS` and `GDRIVE_FOLDER_ID` are both set in the
 server's environment. Files are owned by a **Service Account** (a
