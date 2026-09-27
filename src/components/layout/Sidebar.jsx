@@ -1,7 +1,8 @@
 import React from 'react';
 import {
   AlertCircle, BarChart3, BellRing, Box, ClipboardCheck, FileDown, FileText, FolderArchive,
-  GraduationCap, History, LayoutDashboard, LogOut, Receipt, Settings, ShieldAlert, UserCircle,
+  GraduationCap, History, LayoutDashboard, LogOut, Receipt, Settings, ShieldAlert,
+  UserCircle, Users,
 } from 'lucide-react';
 import { initials, roleLabel } from '../../api/format';
 import { useApp } from '../../context/AppContext';
@@ -44,6 +45,7 @@ export const NAV = {
   admin: [
     { title: 'Operations', items: [
       { id: 'admin-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'user-management', label: 'User management', icon: Users },
       { id: 'requests-all', label: 'All requests', icon: FileText },
       { id: 'non-financial-requests', label: 'Faculty issues', icon: AlertCircle, badge: 'issues' },
       { id: 'inventory', label: 'Inventory', icon: Box },

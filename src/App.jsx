@@ -24,6 +24,7 @@ import { DataExports } from './pages/DataExports';
 import { ReportsAnalytics } from './pages/ReportsAnalytics';
 import { NotificationsCenter } from './pages/NotificationsCenter';
 import { SettingsPreferences } from './pages/SettingsPreferences';
+import { UserManagement } from './pages/UserManagement';
 
 const PAGES = {
   dashboard: PrincipalDashboard,
@@ -39,6 +40,7 @@ const PAGES = {
   'faculty-requests': FacultyMyRequests,
   profile: Profile,
   'admin-dashboard': AdminClerkDashboard,
+  'user-management': UserManagement,
   inventory: InventoryManagement,
   'purchase-bills': PurchaseBills,
   exports: DataExports,

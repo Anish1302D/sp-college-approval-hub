@@ -5,6 +5,7 @@ import { requireAuth } from './auth.js';
 import { config } from './config.js';
 import { pool } from './db.js';
 import { HttpError, errorHandler } from './errors.js';
+import { adminRouter } from './routes/admin.js';
 import { attachmentsRouter } from './routes/attachments.js';
 import { authRouter } from './routes/auth.js';
 import { commentsRouter } from './routes/comments.js';
@@ -46,6 +47,7 @@ export function createApp() {
   // Everything below requires a signed-in user.
   const api = express.Router();
   api.use(requireAuth);
+  api.use('/admin', adminRouter);
   api.use('/requests/:id/comments', commentsRouter);
   api.use('/requests', requestsRouter);
   api.use('/issues', issuesRouter);
