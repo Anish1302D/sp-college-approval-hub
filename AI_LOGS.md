@@ -279,3 +279,52 @@ Multi-step improvement plan on the `revisit` branch:
 - `server/.env.example`: documented both new vars with generation commands.
 - `docs/GOOGLE_DRIVE_SETUP.md`: 7-step guide (Cloud project, Drive API, Service Account, folder share, base64 encode, Render env vars, verify).
 - Also fixed secondary bug: `detectType()` now byte-sniffs if declared MIME is wrong (e.g. `application/octet-stream` PDFs from some browsers).
+
+## 2026-09-27 (Phase 2 Schema Implementation & Code Review Refinements)
+
+### Prompt
+
+Implement Phase 2 multi-step requirement (Sub-steps A through D) per `docs/plan/decisions.md` and `docs/plan/phase1-gap-analysis.md`, followed by addressing three code-review feedback issues:
+1. Amount-based routing & two-member CDC model (Sub-step 2A)
+2. Resubmission & request versioning schema (Sub-step 2B)
+3. Document versioning & attachment superseding (Sub-step 2C)
+4. Departmental annual budget provisions with computed balances (Sub-step 2D)
+5. Address 3 code review feedback issues:
+   - Dynamic credentials check in `reset-test-db.js` (skip `ALTER ROLE app_user` if existing password connects).
+   - Strict container inspection for ZIP files (reject unrecognized/spoofed ZIP files with 415).
+   - Custom item display name rendering in `DecisionPanel.jsx` and `RequestDetailModal.jsx`.
+
+### Work Completed
+
+- **Sub-step 2A — Amount-Based Routing & 2-Member CDC Model**:
+  - `₹0 – ₹50,000`: Principal direct authority.
+  - `₹50,000 – ₹5,00,000`: CDC authority (2 members required: `CDC_MEMBER_1`, `CDC_MEMBER_2`).
+  - `> ₹5,00,000`: Joint Chairman + Vice Chairman authority.
+  - Purchase Committee updated to non-deciding validity review stage.
+  - Created migration `20260927T211500_amount_routing_and_cdc_joint.sql`.
+
+- **Sub-step 2B — Resubmission & Versioning**:
+  - Original `request_id` maintained on resubmission while incrementing `version_number`.
+  - Enforced `RETURN` action permissions strictly to Purchase Committee and Principal roles.
+  - Gated `fn_resubmit_request` to the original requester (`raised_by`).
+  - Added cryptographic digital signature/seal generation for `RESUBMIT` actions for complete audit trail integrity.
+  - Created migration `20260927T220000_resubmission_and_versioning.sql`.
+
+- **Sub-step 2C — Document Versioning & Attachment Linking**:
+  - Added `fn_supersede_attachment` to track file versioning (`superseded_by_id`, `version_number`).
+  - Operates across both `local` and `drive` storage backends.
+  - Created migration `20260927T230000_document_versioning.sql`.
+
+- **Sub-step 2D — Departmental Annual Budget Provisions**:
+  - Added `department_budget_provisions` table with attached supporting documents and RLS policies restricted by department.
+  - Added views to compute `utilized_amount`, `committed_amount`, and `remaining_amount` dynamically from actual request records.
+  - Created migration `20260927T240000_budget_provision.sql`.
+
+- **Code Review Fixes**:
+  - **Issue 1**: Updated `server/scripts/reset-test-db.js` with `getAppUserCredentials()` and `canUserAuthenticate()` check to skip `ALTER ROLE app_user` when existing credentials connect successfully. Added test in `server/test/auth.test.js`.
+  - **Issue 2**: Updated `detectType` in `server/src/storage.js` to return `null` immediately when `inspectZipContainer` returns `null` for a ZIP file, preventing spoofed ZIP uploads. Added test in `server/test/attachments.test.js` verifying 415 rejection.
+  - **Issue 3**: Replaced direct `budgetItem.name` rendering in `DecisionPanel.jsx` and `RequestDetailModal.jsx` with `parseCustomItem(item.budgetItem, item.remarks).displayName`. Confirmed no frontend testing framework exists for `src/` in `package.json`.
+
+- **Git Commit & Push**:
+  - Committed and pushed all Phase 2 migrations, schema updates, summaries, and code-review fixes to GitHub branch `revisit`.
+
