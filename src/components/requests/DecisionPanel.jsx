@@ -3,6 +3,7 @@ import { CheckCircle2, Scissors, Send, XCircle } from 'lucide-react';
 import { api } from '../../api/client';
 import { money, quantity } from '../../api/format';
 import { useAction } from '../../hooks/useApi';
+import { parseCustomItem } from '../../utils/customItem';
 
 // Persistent (unselected) styles give approvers an immediate visual cue
 // of what each button does BEFORE they click. Selected styles are bolder.
@@ -75,13 +76,14 @@ export const DecisionPanel = ({ request }) => {
   if (action === 'REJECT' && reason.trim().length < 3) problems.push('Give a reason for rejecting.');
   if (action === 'PARTIAL_APPROVE') {
     for (const i of request.items) {
+      const { displayName } = parseCustomItem(i.budgetItem, i.remarks);
       const qty = Number(lines[i.id].qty);
       if (lines[i.id].qty === '' || Number.isNaN(qty) || qty < 0 || qty > i.requestedQuantity) {
-        problems.push(`${i.budgetItem.name}: approve between 0 and ${quantity(i.requestedQuantity)}.`);
+        problems.push(`${displayName}: approve between 0 and ${quantity(i.requestedQuantity)}.`);
       } else if (lineAmount(i) > paise(i.estimatedTotal)) {
-        problems.push(`${i.budgetItem.name}: the amount can't exceed ${money(i.estimatedTotal)}.`);
+        problems.push(`${displayName}: the amount can't exceed ${money(i.estimatedTotal)}.`);
       } else if (qty === 0 && lineAmount(i) > 0) {
-        problems.push(`${i.budgetItem.name}: an item left out (quantity 0) can't carry an amount.`);
+        problems.push(`${displayName}: an item left out (quantity 0) can't carry an amount.`);
       }
     }
   }
@@ -150,21 +152,24 @@ export const DecisionPanel = ({ request }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {request.items.map((i) => (
-                <tr key={i.id}>
-                  <td className="py-2 px-3 font-semibold text-gray-800">{i.budgetItem.name}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-gray-500">{quantity(i.requestedQuantity)} × {money(i.unitCost)}</td>
-                  <td className="py-2 px-3 w-32">
-                    <input type="number" min="0" max={i.requestedQuantity} step="0.01" aria-label={`Approved quantity for ${i.budgetItem.name}`}
-                      className={inputCls} value={lines[i.id].qty} onChange={(e) => setLine(i.id, { qty: e.target.value })} />
-                  </td>
-                  <td className="py-2 px-3 w-40">
-                    <input type="number" min="0" step="0.01" aria-label={`Approved amount for ${i.budgetItem.name}`}
-                      placeholder={money(lineAmount(i) / 100)} className={inputCls}
-                      value={lines[i.id].amount} onChange={(e) => setLine(i.id, { amount: e.target.value })} />
-                  </td>
-                </tr>
-              ))}
+              {request.items.map((i) => {
+                const { displayName } = parseCustomItem(i.budgetItem, i.remarks);
+                return (
+                  <tr key={i.id}>
+                    <td className="py-2 px-3 font-semibold text-gray-800">{displayName}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-gray-500">{quantity(i.requestedQuantity)} × {money(i.unitCost)}</td>
+                    <td className="py-2 px-3 w-32">
+                      <input type="number" min="0" max={i.requestedQuantity} step="0.01" aria-label={`Approved quantity for ${displayName}`}
+                        className={inputCls} value={lines[i.id].qty} onChange={(e) => setLine(i.id, { qty: e.target.value })} />
+                    </td>
+                    <td className="py-2 px-3 w-40">
+                      <input type="number" min="0" step="0.01" aria-label={`Approved amount for ${displayName}`}
+                        placeholder={money(lineAmount(i) / 100)} className={inputCls}
+                        value={lines[i.id].amount} onChange={(e) => setLine(i.id, { amount: e.target.value })} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <p className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-100">

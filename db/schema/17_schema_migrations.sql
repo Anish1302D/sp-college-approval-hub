@@ -20,5 +20,9 @@ INSERT INTO schema_migrations (filename) VALUES
     ('20260912T090000_indian_number_format.sql'),
     ('20260927T120000_other_sentinel_items.sql'),
     ('20260927T121500_seed_courses.sql'),
-    ('20260927T200000_add_attachment_storage_backend.sql')
+    ('20260927T200000_add_attachment_storage_backend.sql'),
+    ('20260927T211500_amount_routing_and_cdc_joint.sql'),
+    ('20260927T220000_resubmission_and_versioning.sql'),
+    ('20260927T230000_document_versioning.sql'),
+    ('20260927T240000_budget_provision.sql')
 ON CONFLICT (filename) DO NOTHING;

@@ -63,6 +63,12 @@ test('content is checked, not the name or the declared type', async () => {
   const svg = new FormData();
   svg.append('file', new Blob(['<svg onload="alert(1)"/>'], { type: 'image/svg+xml' }), 'logo.svg');
   expectStatus(await t.api('POST', `/api/requests/${requestId}/attachments`, { token: tok.head, form: svg }), 415);
+
+  const spoofedZip = new FormData();
+  // ZIP header PK\x03\x04 without OOXML word/ or xl/ structure, declared as DOCX.
+  const zipBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64, 0x00)]);
+  spoofedZip.append('file', new Blob([zipBytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'spoofed.docx');
+  expectStatus(await t.api('POST', `/api/requests/${requestId}/attachments`, { token: tok.head, form: spoofedZip }), 415);
 });
 
 test('oversized files are refused and leave nothing behind', async () => {

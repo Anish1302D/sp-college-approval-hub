@@ -1,18 +1,65 @@
--- fn_record_action — the single entry point for every approval decision.
---
--- One call does all of it atomically: authority check, signature, the
--- approval_actions row, per-item decisions, item status updates, the
--- recomputed request status, and the audit log entry. Callers should never
--- write approval_actions by hand — doing it in separate statements is how a
--- request ends up half-decided when something fails midway.
---
--- p_item_decisions is a JSON array, one object per line item being decided:
---   [{"request_item_id": "...", "approved_quantity": 2,
---     "approved_amount": 20000, "remarks": "optional"}]
---
--- Omitting it on an APPROVE approves every item in full. Omitting it on a
--- PARTIAL_APPROVE is an error — a partial approval has to say what was cut.
+BEGIN;
 
+-- 1. Update stage_routing_rules so all requests enter at PURCHASE_COMMITTEE
+UPDATE stage_routing_rules
+   SET min_amount = 0,
+       max_amount = NULL
+ WHERE stage_id = (SELECT stage_id FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE');
+
+DELETE FROM stage_routing_rules
+ WHERE stage_id IN (SELECT stage_id FROM workflow_stages WHERE code IN ('PRINCIPAL', 'CDC'));
+
+-- 2. Update fn_route_stage(p_amount) to always return Purchase Committee
+CREATE OR REPLACE FUNCTION fn_route_stage(p_amount NUMERIC)
+RETURNS INTEGER AS $$
+    SELECT stage_id FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE';
+$$ LANGUAGE sql STABLE;
+
+-- 3. Database-level trigger to enforce stage progression rules
+CREATE OR REPLACE FUNCTION fn_enforce_stage_progression()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_principal_stage_id INTEGER;
+    v_cdc_stage_id       INTEGER;
+    v_final_stage_id     INTEGER;
+BEGIN
+    SELECT stage_id INTO v_principal_stage_id FROM workflow_stages WHERE code = 'PRINCIPAL';
+    SELECT stage_id INTO v_cdc_stage_id       FROM workflow_stages WHERE code = 'CDC';
+    SELECT stage_id INTO v_final_stage_id     FROM workflow_stages WHERE code = 'FINAL_AUTHORITY';
+
+    -- Cannot enter CDC or FINAL_AUTHORITY without a prior Principal approval action
+    IF NEW.current_stage_id IN (v_cdc_stage_id, v_final_stage_id)
+       AND (OLD.current_stage_id IS NULL OR OLD.current_stage_id <> NEW.current_stage_id) THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM approval_actions
+            WHERE request_id = NEW.request_id
+              AND stage_id   = v_principal_stage_id
+              AND action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE', 'FORWARD', 'RETURN')
+        ) THEN
+            RAISE EXCEPTION 'Request cannot advance to stage % without a prior Principal stage approval action',
+                (SELECT code FROM workflow_stages WHERE stage_id = NEW.current_stage_id)
+                USING ERRCODE = 'SP016';
+        END IF;
+    END IF;
+
+    -- Cannot jump from PURCHASE_COMMITTEE directly to CDC or FINAL_AUTHORITY
+    IF NEW.current_stage_id IN (v_cdc_stage_id, v_final_stage_id)
+       AND OLD.current_stage_id = (SELECT stage_id FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE') THEN
+        RAISE EXCEPTION 'Request cannot skip the Principal stage'
+            USING ERRCODE = 'SP016';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_enforce_stage_progression ON requests;
+CREATE TRIGGER trg_enforce_stage_progression
+    BEFORE INSERT OR UPDATE OF current_stage_id ON requests
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_enforce_stage_progression();
+
+-- 4. Update fn_record_action for PC review-only, Principal gate, CDC 2-member model, Chairman+VC joint model
 CREATE OR REPLACE FUNCTION fn_record_action(
     p_request_id        UUID,
     p_actor_id          UUID,
@@ -68,11 +115,6 @@ BEGIN
             USING ERRCODE = 'SP003';
     END IF;
 
-    IF v_req.current_status = 'AWAITING_RESUBMISSION' THEN
-        RAISE EXCEPTION 'Request % is awaiting resubmission by the requester', v_req.request_number
-            USING ERRCODE = 'SP017';
-    END IF;
-
     SELECT code, is_final INTO v_stage_code, v_is_final
     FROM workflow_stages WHERE stage_id = v_req.current_stage_id;
 
@@ -115,16 +157,6 @@ BEGIN
             USING ERRCODE = 'SP007';
     END IF;
 
-    IF p_action = 'RETURN' AND v_stage_code NOT IN ('PURCHASE_COMMITTEE', 'PRINCIPAL') THEN
-        RAISE EXCEPTION 'Only Purchase Committee and Principal can return a request for correction'
-            USING ERRCODE = 'SP005';
-    END IF;
-
-    IF p_action = 'RETURN' AND COALESCE(TRIM(p_comments), TRIM(p_rejection_reason), '') = '' THEN
-        RAISE EXCEPTION 'A return for correction requires a reason or comments'
-            USING ERRCODE = 'SP007';
-    END IF;
-
     IF p_action = 'PARTIAL_APPROVE'
        AND (p_item_decisions IS NULL OR jsonb_array_length(p_item_decisions) = 0) THEN
         RAISE EXCEPTION 'A partial approval must specify item decisions'
@@ -142,11 +174,7 @@ BEGIN
         v_new_status := 'REJECTED';
         v_new_stage  := v_req.current_stage_id;
 
-    ELSIF p_action = 'RETURN' THEN
-        v_new_status := 'AWAITING_RESUBMISSION';
-        v_new_stage  := v_req.current_stage_id;
-
-    ELSIF p_action = 'COMMENT' THEN
+    ELSIF p_action IN ('COMMENT','RETURN') THEN
         v_new_status := v_req.current_status;
         v_new_stage  := v_req.current_stage_id;
 
@@ -185,17 +213,6 @@ BEGIN
         v_req.current_status, v_new_status, v_req.tentative_total_cost,
         p_rejection_reason, p_comments, v_signature_id)
     RETURNING action_id INTO v_action_id;
-
-    IF p_action = 'RETURN' THEN
-        INSERT INTO correction_requests (
-            request_id, requested_by, requested_at_stage_id,
-            previous_status, reason, fields_to_correct
-        ) VALUES (
-            p_request_id, p_actor_id, v_req.current_stage_id,
-            v_req.current_status, COALESCE(p_comments, p_rejection_reason, 'Correction requested'),
-            '[]'::jsonb
-        );
-    END IF;
 
     -- Item-level decisions
     IF p_item_decisions IS NOT NULL AND jsonb_array_length(p_item_decisions) > 0 THEN
@@ -355,3 +372,46 @@ BEGIN
     RETURN v_action_id;
 END;
 $$ LANGUAGE plpgsql;
+
+-- 5. Update RLS policy requests_approver_update
+DROP POLICY IF EXISTS requests_approver_update ON requests;
+CREATE POLICY requests_approver_update ON requests
+    FOR UPDATE
+    USING (
+        EXISTS (
+            SELECT 1 FROM stage_approvers sa
+            WHERE sa.user_id = app_current_user_id()
+              AND sa.stage_id = requests.current_stage_id
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1
+            FROM stage_approvers sa
+            JOIN workflow_stages mine   ON mine.stage_id   = sa.stage_id
+            JOIN workflow_stages target ON target.stage_id = requests.current_stage_id
+            WHERE sa.user_id = app_current_user_id()
+              AND target.sequence_no >= mine.sequence_no
+        )
+        AND NOT (
+            requests.current_status IN ('APPROVED', 'PARTIALLY_APPROVED')
+            AND EXISTS (
+                SELECT 1 FROM stage_approvers sa
+                JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+                WHERE sa.user_id = app_current_user_id()
+                  AND ws.code = 'PURCHASE_COMMITTEE'
+            )
+        )
+        AND NOT (
+            requests.current_status IN ('APPROVED', 'PARTIALLY_APPROVED')
+            AND requests.tentative_total_cost > 50000
+            AND EXISTS (
+                SELECT 1 FROM stage_approvers sa
+                JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+                WHERE sa.user_id = app_current_user_id()
+                  AND ws.code = 'PRINCIPAL'
+            )
+        )
+    );
+
+COMMIT;

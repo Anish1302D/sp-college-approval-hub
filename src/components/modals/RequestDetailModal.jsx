@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 import { date, money } from '../../api/format';
 import { useApp } from '../../context/AppContext';
 import { useApi, useAction } from '../../hooks/useApi';
+import { parseCustomItem } from '../../utils/customItem';
 import { Attachments } from '../ui/Attachments';
 import { Modal } from '../ui/Modal';
 import { ErrorState, Loading } from '../ui/States';
@@ -31,8 +32,10 @@ export const RequestDetailModal = () => {
   const { run } = useAction();
   const r = state.data;
 
-  const removeItem = (item) =>
-    run(() => api(`/api/requests/${r.id}/items/${item.id}`, { method: 'DELETE' }), `Removed ${item.budgetItem.name}`);
+  const removeItem = (item) => {
+    const { displayName } = parseCustomItem(item.budgetItem, item.remarks);
+    return run(() => api(`/api/requests/${r.id}/items/${item.id}`, { method: 'DELETE' }), `Removed ${displayName}`);
+  };
 
   return (
     <Modal

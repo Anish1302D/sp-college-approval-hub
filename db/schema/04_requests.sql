@@ -15,6 +15,7 @@ CREATE TABLE requests (
     sanctioned_amount     NUMERIC(14,2) CHECK (sanctioned_amount IS NULL OR sanctioned_amount >= 0),
     current_status        request_status NOT NULL DEFAULT 'DRAFT',
     current_stage_id      INTEGER REFERENCES workflow_stages(stage_id),
+    current_version_number INTEGER NOT NULL DEFAULT 1,
     extra                 JSONB NOT NULL DEFAULT '{}'::jsonb,  -- brand pref, urgency, specs...
     carried_forward_from_request_id UUID REFERENCES requests(request_id),
     carried_forward_from_fy_id      INTEGER REFERENCES financial_years(financial_year_id),
@@ -53,3 +54,39 @@ CREATE TABLE request_items (
 
 CREATE INDEX request_items_request_idx ON request_items(request_id);
 CREATE INDEX request_items_status_idx  ON request_items(item_status);
+
+CREATE TABLE correction_requests (
+    correction_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id               UUID NOT NULL REFERENCES requests(request_id) ON DELETE CASCADE,
+    requested_by             UUID NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    requested_at_stage_id    INTEGER NOT NULL REFERENCES workflow_stages(stage_id),
+    previous_status          request_status NOT NULL,
+    reason                   TEXT NOT NULL,
+    fields_to_correct        JSONB DEFAULT '[]'::jsonb,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at              TIMESTAMPTZ,
+    resolved_by_version      INTEGER
+);
+
+CREATE INDEX correction_requests_request_idx ON correction_requests(request_id);
+
+CREATE TABLE request_versions (
+    version_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id              UUID NOT NULL REFERENCES requests(request_id) ON DELETE CASCADE,
+    version_number          INTEGER NOT NULL,
+    title                   TEXT NOT NULL,
+    description             TEXT,
+    department_id           INTEGER REFERENCES departments(department_id),
+    course_id               INTEGER REFERENCES courses(course_id),
+    financial_year_id       INTEGER NOT NULL REFERENCES financial_years(financial_year_id),
+    budget_head_id          INTEGER NOT NULL REFERENCES budget_heads(budget_head_id),
+    tentative_total_cost    NUMERIC(14,2) NOT NULL,
+    extra                   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    items_snapshot          JSONB NOT NULL,
+    submitted_by            UUID NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    submitted_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    correction_id           UUID REFERENCES correction_requests(correction_id),
+    UNIQUE(request_id, version_number)
+);
+
+CREATE INDEX request_versions_request_idx ON request_versions(request_id, version_number);

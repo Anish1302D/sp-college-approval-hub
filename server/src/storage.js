@@ -97,15 +97,6 @@ export function detectType(buffer, declaredMime, fileName) {
     const zipType = inspectZipContainer(buffer);
     if (zipType === 'docx') return { mime: DOCX_MIME, ext: '.docx' };
     if (zipType === 'xlsx') return { mime: XLSX_MIME, ext: '.xlsx' };
-
-    if (declaredMime === DOCX_MIME) return { mime: DOCX_MIME, ext: '.docx' };
-    if (declaredMime === XLSX_MIME) return { mime: XLSX_MIME, ext: '.xlsx' };
-
-    if (fileName) {
-      const lower = fileName.toLowerCase();
-      if (lower.endsWith('.xlsx')) return { mime: XLSX_MIME, ext: '.xlsx' };
-      if (lower.endsWith('.docx')) return { mime: DOCX_MIME, ext: '.docx' };
-    }
     return null;
   }
 

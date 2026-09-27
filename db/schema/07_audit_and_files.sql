@@ -2,21 +2,28 @@
 -- only the pointer + metadata is stored here.
 
 CREATE TABLE attachments (
-    attachment_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id      UUID REFERENCES requests(request_id) ON DELETE CASCADE,
-    action_id       UUID REFERENCES approval_actions(action_id) ON DELETE SET NULL,
-    issue_id        UUID,                                  -- FK added in 08_non_financial.sql
-    file_name       TEXT NOT NULL,
-    mime_type       TEXT,
-    size_bytes      BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
-    storage_path    TEXT NOT NULL,                         -- key in S3/MinIO/local
-    storage_backend TEXT NOT NULL DEFAULT 'local',
-    uploaded_by     UUID NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
-    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    attachment_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id             UUID REFERENCES requests(request_id) ON DELETE CASCADE,
+    action_id              UUID REFERENCES approval_actions(action_id) ON DELETE SET NULL,
+    issue_id               UUID,                                  -- FK added in 08_non_financial.sql
+    budget_provision_id    UUID,                                  -- FK added in 08_non_financial.sql / migration
+    file_name              TEXT NOT NULL,
+    mime_type              TEXT,
+    size_bytes             BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
+    storage_path           TEXT NOT NULL,                         -- key in S3/MinIO/local
+    storage_backend        TEXT NOT NULL DEFAULT 'local',
+    uploaded_by            UUID NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    uploaded_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    version_number         INTEGER NOT NULL DEFAULT 1,
+    superseded_by_id       UUID REFERENCES attachments(attachment_id) ON DELETE SET NULL,
+    request_version_number INTEGER DEFAULT 1,
+    replacement_reason     TEXT
 );
 
-CREATE INDEX attachments_request_idx ON attachments(request_id);
-CREATE INDEX attachments_action_idx  ON attachments(action_id);
+CREATE INDEX attachments_request_idx          ON attachments(request_id);
+CREATE INDEX attachments_action_idx           ON attachments(action_id);
+CREATE INDEX attachments_superseded_idx       ON attachments(superseded_by_id);
+CREATE INDEX attachments_budget_provision_idx ON attachments(budget_provision_id);
 
 -- Generic audit log for anything worth tracing beyond the domain-level
 -- approval_actions (login, permission changes, master-data edits, etc.).

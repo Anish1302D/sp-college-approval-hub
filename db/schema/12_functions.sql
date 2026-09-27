@@ -1,16 +1,62 @@
 -- Helper functions the app can call so complex writes are one round-trip
 -- and stay consistent even if two users act concurrently.
 
--- Picks the workflow stage a request should enter, based on total amount.
+-- Picks the workflow stage a request should enter (Purchase Committee for validity review).
 CREATE OR REPLACE FUNCTION fn_route_stage(p_amount NUMERIC)
 RETURNS INTEGER AS $$
-    SELECT srr.stage_id
-    FROM stage_routing_rules srr
-    WHERE srr.min_amount <= p_amount
-      AND (srr.max_amount IS NULL OR p_amount < srr.max_amount)
-    ORDER BY srr.min_amount DESC
-    LIMIT 1;
+    SELECT stage_id FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE';
 $$ LANGUAGE sql STABLE;
+
+-- Database-level trigger to enforce stage progression rules
+CREATE OR REPLACE FUNCTION fn_enforce_stage_progression()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_principal_stage_id INTEGER;
+    v_cdc_stage_id       INTEGER;
+    v_final_stage_id     INTEGER;
+BEGIN
+    SELECT stage_id INTO v_principal_stage_id FROM workflow_stages WHERE code = 'PRINCIPAL';
+    SELECT stage_id INTO v_cdc_stage_id       FROM workflow_stages WHERE code = 'CDC';
+    SELECT stage_id INTO v_final_stage_id     FROM workflow_stages WHERE code = 'FINAL_AUTHORITY';
+
+    -- Request in AWAITING_RESUBMISSION status cannot be advanced except by resubmission
+    IF OLD.current_status = 'AWAITING_RESUBMISSION'
+       AND NEW.current_status NOT IN ('AWAITING_RESUBMISSION', 'UNDER_PURCHASE_COMMITTEE_REVIEW', 'UNDER_PRINCIPAL_REVIEW', 'UNDER_CDC_REVIEW', 'UNDER_FINAL_AUTHORITY_REVIEW') THEN
+        RAISE EXCEPTION 'Request in AWAITING_RESUBMISSION status cannot be advanced except by resubmission'
+            USING ERRCODE = 'SP017';
+    END IF;
+
+    -- Cannot enter CDC or FINAL_AUTHORITY without a prior Principal approval action
+    IF NEW.current_stage_id IN (v_cdc_stage_id, v_final_stage_id)
+       AND (OLD.current_stage_id IS NULL OR OLD.current_stage_id <> NEW.current_stage_id) THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM approval_actions
+            WHERE request_id = NEW.request_id
+              AND stage_id   = v_principal_stage_id
+              AND action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE', 'FORWARD', 'RETURN')
+        ) THEN
+            RAISE EXCEPTION 'Request cannot advance to stage % without a prior Principal stage approval action',
+                (SELECT code FROM workflow_stages WHERE stage_id = NEW.current_stage_id)
+                USING ERRCODE = 'SP016';
+        END IF;
+    END IF;
+
+    -- Cannot jump from PURCHASE_COMMITTEE directly to CDC or FINAL_AUTHORITY
+    IF NEW.current_stage_id IN (v_cdc_stage_id, v_final_stage_id)
+       AND OLD.current_stage_id = (SELECT stage_id FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE') THEN
+        RAISE EXCEPTION 'Request cannot skip the Principal stage'
+            USING ERRCODE = 'SP016';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_enforce_stage_progression ON requests;
+CREATE TRIGGER trg_enforce_stage_progression
+    BEFORE INSERT OR UPDATE OF current_stage_id ON requests
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_enforce_stage_progression();
 
 -- The "sitting at this stage" status for a given stage. Used by both
 -- fn_submit_request and fn_record_action so the mapping lives in one place.
@@ -36,43 +82,269 @@ $$ LANGUAGE sql STABLE;
 
 -- Moves a DRAFT request into the correct entry stage and stamps submitted_at.
 CREATE OR REPLACE FUNCTION fn_submit_request(p_request_id UUID)
-RETURNS VOID AS $$
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
     v_amount NUMERIC(14,2);
     v_stage  INTEGER;
     v_status request_status;
+    v_req    requests%ROWTYPE;
+    v_items_json JSONB;
 BEGIN
-    SELECT tentative_total_cost, current_status
-      INTO v_amount, v_status
+    SELECT * INTO v_req
     FROM requests
     WHERE request_id = p_request_id
     FOR UPDATE;
 
-    IF v_status <> 'DRAFT' THEN
-        RAISE EXCEPTION 'Request % is not in DRAFT state (current=%)', p_request_id, v_status
+    IF v_req.request_id IS NULL THEN
+        RAISE EXCEPTION 'Request % not found', p_request_id
+            USING ERRCODE = 'SP001';
+    END IF;
+
+    IF v_req.current_status <> 'DRAFT' THEN
+        RAISE EXCEPTION 'Request % is not in DRAFT state (current=%)', p_request_id, v_req.current_status
             USING ERRCODE = 'SP011';
     END IF;
 
+    v_amount := v_req.tentative_total_cost;
     v_stage := fn_route_stage(v_amount);
     IF v_stage IS NULL THEN
         RAISE EXCEPTION 'No routing rule matches amount %', v_amount
             USING ERRCODE = 'SP012';
     END IF;
 
+    v_status := fn_stage_status((SELECT code FROM workflow_stages WHERE stage_id = v_stage));
+
     UPDATE requests
-       SET current_status   = fn_stage_status((SELECT code FROM workflow_stages WHERE stage_id = v_stage)),
+       SET current_status   = v_status,
            current_stage_id = v_stage,
+           current_version_number = 1,
            submitted_at     = COALESCE(submitted_at, NOW())
      WHERE request_id = p_request_id;
+
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'request_item_id', request_item_id,
+            'budget_item_id', budget_item_id,
+            'item_type_snapshot', item_type_snapshot,
+            'requested_quantity', requested_quantity,
+            'estimated_unit_cost', estimated_unit_cost,
+            'estimated_total', estimated_total,
+            'remarks', remarks
+        )
+    ) INTO v_items_json
+    FROM request_items
+    WHERE request_id = p_request_id;
+
+    INSERT INTO request_versions (
+        request_id, version_number, title, description,
+        department_id, course_id, financial_year_id, budget_head_id,
+        tentative_total_cost, extra, items_snapshot, submitted_by
+    ) VALUES (
+        p_request_id, 1, v_req.title, v_req.description,
+        v_req.department_id, v_req.course_id, v_req.financial_year_id, v_req.budget_head_id,
+        v_req.tentative_total_cost, v_req.extra, COALESCE(v_items_json, '[]'::jsonb), v_req.raised_by
+    )
+    ON CONFLICT (request_id, version_number) DO NOTHING;
 
     INSERT INTO approval_actions (request_id, stage_id, performed_by, action,
                                   previous_status, new_status,
                                   amount_requested_snapshot)
     SELECT p_request_id, v_stage, raised_by, 'SUBMIT',
-           'DRAFT', current_status, tentative_total_cost
+           'DRAFT', v_status, tentative_total_cost
     FROM requests WHERE request_id = p_request_id;
 END;
-$$ LANGUAGE plpgsql;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_resubmit_request(
+    p_request_id     UUID,
+    p_actor_id       UUID,
+    p_comments       TEXT DEFAULT NULL,
+    p_signature_hash TEXT DEFAULT NULL
+) RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_req           requests%ROWTYPE;
+    v_new_version   INTEGER;
+    v_corr_id       UUID;
+    v_items_json    JSONB;
+    v_target_stage  INTEGER;
+    v_target_status request_status;
+    v_signature_id  UUID;
+BEGIN
+    IF app_current_user_id() IS NOT NULL
+       AND p_actor_id IS DISTINCT FROM app_current_user_id() THEN
+        RAISE EXCEPTION 'Actor % does not match the authenticated user', p_actor_id
+            USING ERRCODE = 'SP013';
+    END IF;
+
+    SELECT * INTO v_req FROM requests WHERE request_id = p_request_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Request % not found', p_request_id
+            USING ERRCODE = 'SP001';
+    END IF;
+
+    IF v_req.raised_by IS DISTINCT FROM p_actor_id THEN
+        RAISE EXCEPTION 'User % is not the raiser of request %', p_actor_id, v_req.request_number
+            USING ERRCODE = 'SP004';
+    END IF;
+
+    IF v_req.current_status <> 'AWAITING_RESUBMISSION' THEN
+        RAISE EXCEPTION 'Request % is not in AWAITING_RESUBMISSION state (current=%)',
+            v_req.request_number, v_req.current_status
+            USING ERRCODE = 'SP018';
+    END IF;
+
+    v_new_version := COALESCE(v_req.current_version_number, 1) + 1;
+
+    SELECT correction_id INTO v_corr_id
+    FROM correction_requests
+    WHERE request_id = p_request_id AND resolved_at IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF v_corr_id IS NOT NULL THEN
+        UPDATE correction_requests
+           SET resolved_at = NOW(),
+               resolved_by_version = v_new_version
+         WHERE correction_id = v_corr_id;
+    END IF;
+
+    SELECT COALESCE(SUM(estimated_total), 0) INTO v_req.tentative_total_cost
+    FROM request_items WHERE request_id = p_request_id;
+
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'request_item_id', request_item_id,
+            'budget_item_id', budget_item_id,
+            'item_type_snapshot', item_type_snapshot,
+            'requested_quantity', requested_quantity,
+            'estimated_unit_cost', estimated_unit_cost,
+            'estimated_total', estimated_total,
+            'remarks', remarks
+        )
+    ) INTO v_items_json
+    FROM request_items
+    WHERE request_id = p_request_id;
+
+    INSERT INTO request_versions (
+        request_id, version_number, title, description,
+        department_id, course_id, financial_year_id, budget_head_id,
+        tentative_total_cost, extra, items_snapshot, submitted_by, correction_id
+    ) VALUES (
+        p_request_id, v_new_version, v_req.title, v_req.description,
+        v_req.department_id, v_req.course_id, v_req.financial_year_id, v_req.budget_head_id,
+        v_req.tentative_total_cost, v_req.extra, COALESCE(v_items_json, '[]'::jsonb), p_actor_id, v_corr_id
+    );
+
+    v_target_stage  := v_req.current_stage_id;
+    v_target_status := fn_stage_status((SELECT code FROM workflow_stages WHERE stage_id = v_target_stage));
+
+    UPDATE requests
+       SET current_version_number = v_new_version,
+           tentative_total_cost   = v_req.tentative_total_cost,
+           current_status         = v_target_status,
+           updated_at             = NOW()
+     WHERE request_id = p_request_id;
+
+    IF p_signature_hash IS NOT NULL THEN
+        INSERT INTO digital_signatures (user_id, signed_hash)
+        VALUES (p_actor_id, p_signature_hash)
+        RETURNING signature_id INTO v_signature_id;
+    END IF;
+
+    INSERT INTO approval_actions (
+        request_id, stage_id, performed_by, action,
+        previous_status, new_status, amount_requested_snapshot, comments, signature_id
+    ) VALUES (
+        p_request_id, v_target_stage, p_actor_id, 'RESUBMIT',
+        'AWAITING_RESUBMISSION', v_target_status, v_req.tentative_total_cost, p_comments, v_signature_id
+    );
+
+    RETURN v_new_version;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_supersede_attachment(
+    p_old_attachment_id   UUID,
+    p_file_name           TEXT,
+    p_mime_type           TEXT,
+    p_size_bytes          BIGINT,
+    p_storage_path        TEXT,
+    p_storage_backend     TEXT,
+    p_uploaded_by         UUID,
+    p_replacement_reason  TEXT DEFAULT NULL
+) RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_old         attachments%ROWTYPE;
+    v_new_id      UUID;
+    v_req_v       INTEGER;
+BEGIN
+    SELECT * INTO v_old FROM attachments WHERE attachment_id = p_old_attachment_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Attachment % not found', p_old_attachment_id
+            USING ERRCODE = 'SP001';
+    END IF;
+
+    IF v_old.request_id IS NOT NULL THEN
+        SELECT current_version_number INTO v_req_v FROM requests WHERE request_id = v_old.request_id;
+    END IF;
+
+    INSERT INTO attachments (
+        request_id, issue_id, budget_provision_id, file_name, mime_type, size_bytes,
+        storage_path, storage_backend, uploaded_by, version_number,
+        request_version_number, replacement_reason
+    ) VALUES (
+        v_old.request_id, v_old.issue_id, v_old.budget_provision_id, p_file_name, p_mime_type, p_size_bytes,
+        p_storage_path, COALESCE(p_storage_backend, 'local'), p_uploaded_by,
+        v_old.version_number + 1, COALESCE(v_req_v, v_old.request_version_number, 1), p_replacement_reason
+    ) RETURNING attachment_id INTO v_new_id;
+
+    UPDATE attachments
+       SET superseded_by_id = v_new_id
+     WHERE attachment_id = p_old_attachment_id;
+
+    RETURN v_new_id;
+END;
+$$;
+
+-- Helper function for request-review context
+CREATE OR REPLACE FUNCTION fn_get_department_budget_context(
+    p_department_id     INTEGER,
+    p_financial_year_id INTEGER,
+    p_budget_head_id    INTEGER DEFAULT NULL
+) RETURNS TABLE (
+    budget_provision_id UUID,
+    allocated_amount    NUMERIC(14,2),
+    utilized_amount     NUMERIC(14,2),
+    committed_amount    NUMERIC(14,2),
+    remaining_amount    NUMERIC(14,2),
+    available_amount    NUMERIC(14,2)
+) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+    SELECT
+        v.budget_provision_id,
+        v.allocated_amount,
+        v.utilized_amount,
+        v.committed_amount,
+        v.remaining_amount,
+        v.available_amount
+    FROM v_department_budget_summary v
+    WHERE v.department_id = p_department_id
+      AND v.financial_year_id = p_financial_year_id
+      AND (p_budget_head_id IS NULL OR v.budget_head_id = p_budget_head_id OR v.budget_head_id IS NULL)
+    ORDER BY v.budget_head_id NULLS LAST
+    LIMIT 1;
+$$;
 
 -- Carries an unfinished request into the next financial year, preserving
 -- the original row and pointing back to it. Nothing is overwritten.

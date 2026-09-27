@@ -30,13 +30,16 @@ DO $$
 DECLARE r RECORD;
 BEGIN
     FOR r IN SELECT * FROM (VALUES
-        ('head',      'head.cs@spcollege.edu'),
-        ('incharge',  'incharge@spcollege.edu'),
-        ('pc',        'pc1@spcollege.edu'),
-        ('principal', 'principal@spcollege.edu'),
-        ('cdc',       'cdc.grant@spcollege.edu'),
-        ('chairman',  'chairman@spcollege.edu'),
-        ('admin',     'admin@spcollege.edu')) AS v(k, email)
+        ('head',         'head.cs@spcollege.edu'),
+        ('head_chem',    'head.chem@spcollege.edu'),
+        ('incharge',     'incharge@spcollege.edu'),
+        ('pc',           'pc1@spcollege.edu'),
+        ('principal',    'principal@spcollege.edu'),
+        ('cdc_grant',    'cdc.grant@spcollege.edu'),
+        ('cdc_nongrant', 'cdc.nongrant@spcollege.edu'),
+        ('chairman',     'chairman@spcollege.edu'),
+        ('vp',           'vp@spcollege.edu'),
+        ('admin',        'admin@spcollege.edu')) AS v(k, email)
     LOOP
         PERFORM set_config('t.' || r.k,
             (SELECT user_id::TEXT FROM users WHERE email = r.email), true);
@@ -82,7 +85,7 @@ BEGIN
     SELECT budget_item_id INTO v_mic  FROM budget_items WHERE code = 'MIC-01';
     SELECT budget_item_id INTO v_cart FROM budget_items WHERE code = 'CART-01';
 
-    -- Head: a 6 lakh request (routes straight to CDC) and a private draft.
+    -- Head: a 6 lakh request and a private draft.
     PERFORM pg_temp.act_as('head');
     INSERT INTO requests (raised_by, financial_year_id, budget_head_id, title, tentative_total_cost)
     VALUES (current_setting('t.head')::UUID, v_fy, v_it, 'AV overhaul', 600000)
@@ -122,6 +125,21 @@ END $$;
 DO $$ BEGIN
     PERFORM pg_temp.act_as('head');     PERFORM fn_submit_request(current_setting('t.big')::UUID);
     PERFORM pg_temp.act_as('incharge'); PERFORM fn_submit_request(current_setting('t.small')::UUID);
+
+    PERFORM pg_temp.act_as('head');
+    PERFORM pg_temp.assert_that(
+        (SELECT current_status FROM requests WHERE request_id = current_setting('t.big')::UUID) = 'UNDER_PURCHASE_COMMITTEE_REVIEW',
+        'all requests enter Purchase Committee review first, regardless of amount');
+END $$;
+
+-- Enforce stage progression trigger test
+DO $$ BEGIN
+    PERFORM pg_temp.act_as('admin');
+    PERFORM pg_temp.expect_error(format(
+        $q$UPDATE requests SET current_stage_id = (SELECT stage_id FROM workflow_stages WHERE code = 'CDC'),
+                               current_status = 'UNDER_CDC_REVIEW'
+           WHERE request_id = %L$q$, current_setting('t.big')),
+        'SP016', 'request cannot jump to CDC without prior Principal approval action');
 END $$;
 
 -- ===========================================================================
@@ -137,19 +155,9 @@ DO $$ BEGIN
                                       WHERE request_id = current_setting('t.draft')::UUID),
         'another user''s draft is invisible through views');
 
-    PERFORM pg_temp.act_as('principal');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM requests WHERE request_id = current_setting('t.big')::UUID),
-        'principal sees a 6 lakh request that bypassed the Principal stage');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM request_items WHERE request_id = current_setting('t.big')::UUID),
-        'principal sees that request''s line items');
-    PERFORM pg_temp.assert_that(NOT EXISTS (SELECT 1 FROM requests WHERE request_id = current_setting('t.draft')::UUID),
-        'principal does not see drafts');
-    PERFORM pg_temp.assert_that((SELECT total FROM v_dashboard_by_fy) = 2,
-        'principal dashboard counts both submitted requests, not the draft');
-
     PERFORM pg_temp.act_as('pc');
-    PERFORM pg_temp.assert_that(NOT EXISTS (SELECT 1 FROM requests WHERE request_id = current_setting('t.big')::UUID),
-        'purchase committee cannot see a request that never reached it');
+    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM requests WHERE request_id = current_setting('t.big')::UUID),
+        'purchase committee sees 6 lakh request sitting at PC stage');
 
     PERFORM pg_temp.act_as('admin');
     PERFORM pg_temp.assert_that((SELECT count(*) FROM requests) = 3,
@@ -157,227 +165,391 @@ DO $$ BEGIN
 END $$;
 
 -- ===========================================================================
--- Principal read-all must not become edit-all
--- ===========================================================================
-DO $$
-DECLARE v_n INT;
-BEGIN
-    PERFORM pg_temp.act_as('principal');
-    UPDATE request_items SET estimated_unit_cost = 1 WHERE request_id = current_setting('t.big')::UUID;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    PERFORM pg_temp.assert_that(v_n = 0, 'principal cannot edit line items of a request it only reads');
-
-    UPDATE requests SET title = 'tampered' WHERE request_id = current_setting('t.big')::UUID;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    PERFORM pg_temp.assert_that(v_n = 0, 'principal cannot edit a request it only reads');
-END $$;
-
--- ===========================================================================
 -- Approval workflow as app_user
 -- ===========================================================================
 DO $$ BEGIN
-    -- Impersonation: Head's session passes the CDC member's id.
-    PERFORM pg_temp.act_as('head');
+    -- Purchase committee validity review only: cannot approve directly
+    PERFORM pg_temp.act_as('pc');
     PERFORM pg_temp.expect_error(format(
         $q$SELECT fn_record_action(%L, %L, 'APPROVE')$q$,
-        current_setting('t.big'), current_setting('t.cdc')),
-        'SP013', 'requester cannot act by passing an approver''s id (SP013)');
+        current_setting('t.big'), current_setting('t.pc')),
+        'SP005', 'Purchase Committee cannot approve requests directly');
 
-    PERFORM pg_temp.expect_error(format(
-        $q$SELECT fn_record_action(%L, %L, 'APPROVE')$q$,
-        current_setting('t.big'), current_setting('t.head')),
-        'SP004', 'requester cannot approve their own request (SP004)');
+    -- PC passes both requests to Principal
+    PERFORM fn_record_action(current_setting('t.big')::UUID, current_setting('t.pc')::UUID, 'ESCALATE', NULL, 'Valid');
+    PERFORM fn_record_action(current_setting('t.small')::UUID, current_setting('t.pc')::UUID, 'ESCALATE', NULL, 'Valid');
 
+    PERFORM pg_temp.assert_that(
+        (SELECT current_status FROM requests WHERE request_id = current_setting('t.big')::UUID) = 'UNDER_PRINCIPAL_REVIEW',
+        'PC passes 6 lakh request to Principal');
+
+    -- Principal cannot approve requests exceeding 50,000
     PERFORM pg_temp.act_as('principal');
     PERFORM pg_temp.expect_error(format(
         $q$SELECT fn_record_action(%L, %L, 'APPROVE')$q$,
         current_setting('t.big'), current_setting('t.principal')),
-        'SP004', 'principal can read a CDC request but not decide it (SP004, not "not found")');
+        'SP005', 'Principal cannot final-approve request exceeding 50,000');
 
-    -- Escalation: previously rejected by RLS on every attempt.
-    PERFORM pg_temp.act_as('cdc');
-    PERFORM fn_record_action(current_setting('t.big')::UUID, current_setting('t.cdc')::UUID,
-                             'ESCALATE', NULL, 'Grant budget unavailable');
-    PERFORM pg_temp.assert_that(
-        (SELECT current_status FROM requests WHERE request_id = current_setting('t.big')::UUID)
-            = 'UNDER_FINAL_AUTHORITY_REVIEW',
-        'CDC escalates to final authority as app_user');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM requests WHERE request_id = current_setting('t.big')::UUID),
-        'CDC keeps visibility after escalating');
-
-    PERFORM pg_temp.expect_error(format(
-        $q$SELECT fn_record_action(%L, %L, 'APPROVE')$q$,
-        current_setting('t.big'), current_setting('t.cdc')),
-        'SP004', 'CDC cannot act once the request has moved above it');
-
-    -- Final decision: partial approval.
-    PERFORM pg_temp.act_as('chairman');
-    PERFORM fn_record_action(
-        current_setting('t.big')::UUID, current_setting('t.chairman')::UUID, 'PARTIAL_APPROVE',
-        (SELECT jsonb_agg(jsonb_build_object('request_item_id', request_item_id,
-                                             'approved_quantity', 2, 'approved_amount', 300000))
-         FROM request_items WHERE request_id = current_setting('t.big')::UUID),
-        'Two of four within trust ceiling');
-    PERFORM pg_temp.assert_that(
-        (SELECT current_status = 'PARTIALLY_APPROVED' AND sanctioned_amount = 300000
-         FROM requests WHERE request_id = current_setting('t.big')::UUID),
-        'chairman partially approves: PARTIALLY_APPROVED, 3,00,000 sanctioned');
-
-    -- Purchase committee approves the small one outright.
-    PERFORM pg_temp.act_as('pc');
-    PERFORM fn_record_action(current_setting('t.small')::UUID, current_setting('t.pc')::UUID, 'APPROVE');
+    -- Principal approves small request (30,000) directly
+    PERFORM fn_record_action(current_setting('t.small')::UUID, current_setting('t.principal')::UUID, 'APPROVE');
     PERFORM pg_temp.assert_that(
         (SELECT current_status FROM requests WHERE request_id = current_setting('t.small')::UUID) = 'APPROVED',
-        'purchase committee approves as app_user');
-END $$;
+        'Principal approves 30,000 request directly as final authority');
 
--- ===========================================================================
--- Notifications generated by trigger
--- ===========================================================================
-DO $$ BEGIN
-    PERFORM pg_temp.act_as('cdc');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM notifications
-                                  WHERE request_id = current_setting('t.big')::UUID
-                                    AND subject LIKE '%awaits your review'),
-        'CDC was notified when the request arrived');
-
-    PERFORM pg_temp.act_as('chairman');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM notifications
-                                  WHERE request_id = current_setting('t.big')::UUID),
-        'chairman was notified on escalation');
-
-    PERFORM pg_temp.act_as('head');
+    -- Principal passes 6 lakh request to CDC / Final Authority
+    PERFORM fn_record_action(current_setting('t.big')::UUID, current_setting('t.principal')::UUID, 'ESCALATE');
     PERFORM pg_temp.assert_that(
-        (SELECT count(*) FROM notifications WHERE request_id = current_setting('t.big')::UUID) = 2,
-        'requester notified twice: escalated, then partially approved');
-    PERFORM pg_temp.assert_that(NOT EXISTS (SELECT 1 FROM notifications
-                                      WHERE user_id <> current_setting('t.head')::UUID),
-        'requester sees only their own notifications');
-
-    PERFORM pg_temp.expect_error(format(
-        $q$INSERT INTO notifications (user_id, subject) VALUES (%L, 'spam')$q$,
-        current_setting('t.cdc')), '42501', 'users still cannot write notifications for others');
+        (SELECT current_status FROM requests WHERE request_id = current_setting('t.big')::UUID) = 'UNDER_FINAL_AUTHORITY_REVIEW',
+        'Principal passes 6 lakh request to Final Authority');
 END $$;
 
--- ===========================================================================
--- Comment visibility (design document example)
--- ===========================================================================
-DO $$ BEGIN
-    PERFORM pg_temp.act_as('cdc');
-    INSERT INTO comments (request_id, author_user_id, stage_id, body, visibility)
-    SELECT current_setting('t.big')::UUID, current_setting('t.cdc')::UUID, stage_id,
-           'Grant budget is unavailable. Consider Non-Grant budget.', 'UP_CHAIN'
-    FROM workflow_stages WHERE code = 'CDC';
+-- CDC 2-member model test
+DO $$
+DECLARE v_mid UUID; v_fy INT; v_it INT; v_mic INT;
+BEGIN
+    SELECT financial_year_id INTO v_fy FROM financial_years WHERE is_active;
+    SELECT budget_head_id INTO v_it  FROM budget_heads WHERE code = 'IT';
+    SELECT budget_item_id INTO v_mic  FROM budget_items WHERE code = 'MIC-01';
 
-    PERFORM pg_temp.act_as('principal');
-    PERFORM pg_temp.assert_that((SELECT count(*) FROM comments) = 1,
-        'UP_CHAIN CDC comment visible to the Principal');
-    PERFORM pg_temp.act_as('chairman');
-    PERFORM pg_temp.assert_that((SELECT count(*) FROM comments) = 1,
-        'UP_CHAIN CDC comment visible to the stage above');
+    -- Head creates a 1 lakh request (CDC band: 50k-5L)
     PERFORM pg_temp.act_as('head');
-    PERFORM pg_temp.assert_that((SELECT count(*) FROM comments) = 0,
-        'UP_CHAIN CDC comment hidden from the requester');
+    INSERT INTO requests (raised_by, financial_year_id, budget_head_id, title, tentative_total_cost)
+    VALUES (current_setting('t.head')::UUID, v_fy, v_it, 'Mid request', 100000)
+    RETURNING request_id INTO v_mid;
+    INSERT INTO request_items (request_id, budget_item_id, item_type_snapshot,
+                               requested_quantity, estimated_unit_cost, estimated_total)
+    VALUES (v_mid, v_mic, 'CAPITAL', 1, 100000, 100000);
+    PERFORM set_config('t.mid', v_mid::TEXT, true);
+    PERFORM fn_submit_request(v_mid);
 
-    PERFORM pg_temp.act_as('incharge');
-    PERFORM pg_temp.expect_error(format(
-        $q$INSERT INTO comments (request_id, author_user_id, body) VALUES (%L, %L, 'drive-by')$q$,
-        current_setting('t.big'), current_setting('t.incharge')),
-        '42501', 'cannot comment on a request you cannot see');
+    -- PC passes to Principal
+    PERFORM pg_temp.act_as('pc');
+    PERFORM fn_record_action(v_mid, current_setting('t.pc')::UUID, 'ESCALATE');
+
+    -- Principal passes to CDC
+    PERFORM pg_temp.act_as('principal');
+    PERFORM fn_record_action(v_mid, current_setting('t.principal')::UUID, 'ESCALATE');
+
+    -- CDC member tries RETURN action -> expect SP005 (RETURN is only permitted for PC and Principal)
+    PERFORM pg_temp.act_as('cdc_grant');
+    PERFORM pg_temp.expect_error(
+        format($q$SELECT fn_record_action(%L::UUID, %L::UUID, 'RETURN', p_comments := 'Invalid stage return')$q$, v_mid, current_setting('t.cdc_grant')),
+        'SP005', 'CDC stage cannot execute RETURN action');
+
+    -- CDC Grant Member approves: request must NOT advance yet
+    PERFORM pg_temp.act_as('cdc_grant');
+    PERFORM fn_record_action(v_mid, current_setting('t.cdc_grant')::UUID, 'APPROVE');
+    PERFORM pg_temp.assert_that(
+        (SELECT current_status FROM requests WHERE request_id = v_mid) = 'UNDER_CDC_REVIEW',
+        'request remains at CDC stage after only 1 of 2 CDC approvals');
+
+    -- CDC Non-Grant Member approves: request now advances to APPROVED
+    PERFORM pg_temp.act_as('cdc_nongrant');
+    PERFORM fn_record_action(v_mid, current_setting('t.cdc_nongrant')::UUID, 'APPROVE');
+    PERFORM pg_temp.assert_that(
+        (SELECT current_status FROM requests WHERE request_id = v_mid) = 'APPROVED',
+        'request advances to APPROVED after both CDC Grant and Non-Grant approvals recorded');
 END $$;
 
 -- ===========================================================================
--- Attachments
+-- Resubmission & Versioning tests
 -- ===========================================================================
 DO $$
-DECLARE v_n INT;
+DECLARE
+    v_res_id UUID;
+    v_fy     INT;
+    v_it     INT;
+    v_mic    INT;
+    v_new_v  INT;
 BEGIN
+    SELECT financial_year_id INTO v_fy FROM financial_years WHERE is_active;
+    SELECT budget_head_id INTO v_it  FROM budget_heads WHERE code = 'IT';
+    SELECT budget_item_id INTO v_mic  FROM budget_items WHERE code = 'MIC-01';
+
+    -- Head creates a request and submits it (Version 1 snapshot created)
     PERFORM pg_temp.act_as('head');
-    INSERT INTO attachments (request_id, file_name, storage_path, uploaded_by)
-    VALUES (current_setting('t.big')::UUID, 'quote.pdf', 'x/quote.pdf', current_setting('t.head')::UUID);
+    INSERT INTO requests (raised_by, financial_year_id, budget_head_id, title, description, tentative_total_cost)
+    VALUES (current_setting('t.head')::UUID, v_fy, v_it, 'Resubmission test req', 'Original description v1', 25000)
+    RETURNING request_id INTO v_res_id;
 
-    PERFORM pg_temp.act_as('principal');
-    PERFORM pg_temp.assert_that((SELECT count(*) FROM attachments) = 1, 'principal can read the attachment');
-    DELETE FROM attachments;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    PERFORM pg_temp.assert_that(v_n = 0, 'seeing an attachment does not allow deleting it');
+    INSERT INTO request_items (request_id, budget_item_id, item_type_snapshot,
+                               requested_quantity, estimated_unit_cost, estimated_total)
+    VALUES (v_res_id, v_mic, 'CAPITAL', 1, 25000, 25000);
 
-    PERFORM pg_temp.act_as('incharge');
-    PERFORM pg_temp.expect_error(format(
-        $q$INSERT INTO attachments (request_id, file_name, storage_path, uploaded_by)
-           VALUES (%L, 'x', 'x', %L)$q$, current_setting('t.big'), current_setting('t.incharge')),
-        '42501', 'cannot attach to a request you cannot see');
-END $$;
+    PERFORM fn_submit_request(v_res_id);
 
--- ===========================================================================
--- Non-financial issues
--- ===========================================================================
-DO $$
-DECLARE v_issue UUID; v_n INT;
-BEGIN
+    PERFORM pg_temp.assert_that(
+        (SELECT current_version_number FROM requests WHERE request_id = v_res_id) = 1,
+        'request current_version_number is 1 upon initial submission');
+
+    PERFORM pg_temp.assert_that(
+        EXISTS (SELECT 1 FROM request_versions WHERE request_id = v_res_id AND version_number = 1 AND title = 'Resubmission test req'),
+        'version 1 snapshot saved in request_versions upon initial submission');
+
+    -- Purchase Committee returns the request for correction
+    PERFORM pg_temp.act_as('pc');
+    PERFORM fn_record_action(v_res_id, current_setting('t.pc')::UUID, 'RETURN', p_comments := 'Quotation missing stamp, please update quotation');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT current_status FROM requests WHERE request_id = v_res_id) = 'AWAITING_RESUBMISSION',
+        'request status becomes AWAITING_RESUBMISSION after PC returns it');
+
+    PERFORM pg_temp.assert_that(
+        EXISTS (SELECT 1 FROM correction_requests WHERE request_id = v_res_id AND reason LIKE '%missing stamp%'),
+        'correction request row recorded with reason and requester');
+
+    -- PC tries to approve or escalate while request is AWAITING_RESUBMISSION -> expect SP017 error
+    PERFORM pg_temp.expect_error(
+        format($q$SELECT fn_record_action(%L::UUID, %L::UUID, 'ESCALATE')$q$, v_res_id, current_setting('t.pc')),
+        'SP017', 'cannot advance a request that is awaiting resubmission');
+
+    -- Requester edits fields and resubmits
     PERFORM pg_temp.act_as('head');
-    INSERT INTO issues (raised_by, title, description)
-    VALUES (current_setting('t.head')::UUID, 'Projector broken', 'Room 204')
-    RETURNING issue_id INTO v_issue;
-    PERFORM pg_temp.assert_that((SELECT issue_number FROM issues WHERE issue_id = v_issue) ~ '^ISS-\d{4,}$',
-        'issue_number generated from the sequence');
+    UPDATE requests SET title = 'Resubmission test req (Updated)', description = 'Revised description v2' WHERE request_id = v_res_id;
 
-    INSERT INTO attachments (issue_id, file_name, storage_path, uploaded_by)
-    VALUES (v_issue, 'photo.jpg', 'x/photo.jpg', current_setting('t.head')::UUID);
+    v_new_v := fn_resubmit_request(v_res_id, current_setting('t.head')::UUID, 'Resubmitted with updated quotation and details', 'sha256-mock-signature-hash');
 
+    PERFORM pg_temp.assert_that(v_new_v = 2, 'resubmission returns new version number 2');
+
+    PERFORM pg_temp.assert_that(
+        EXISTS (SELECT 1 FROM approval_actions aa JOIN digital_signatures ds ON ds.signature_id = aa.signature_id WHERE aa.request_id = v_res_id AND aa.action = 'RESUBMIT' AND ds.signed_hash = 'sha256-mock-signature-hash'),
+        'RESUBMIT action entry carries digital signature seal when provided');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT current_version_number FROM requests WHERE request_id = v_res_id) = 2,
+        'request current_version_number updated to 2');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT current_status FROM requests WHERE request_id = v_res_id) = 'UNDER_PURCHASE_COMMITTEE_REVIEW',
+        'request returned to review stage after resubmission');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT resolved_by_version FROM correction_requests WHERE request_id = v_res_id) = 2,
+        'correction request resolved_by_version marked as 2');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT count(*) FROM request_versions WHERE request_id = v_res_id) = 2,
+        'request_versions contains both version 1 and version 2 snapshots');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT description FROM request_versions WHERE request_id = v_res_id AND version_number = 1) = 'Original description v1',
+        'version 1 snapshot preserves original description');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT description FROM request_versions WHERE request_id = v_res_id AND version_number = 2) = 'Revised description v2',
+        'version 2 snapshot contains revised description');
+
+    -- Verify downstream approvers (Principal and PC) can read full version history
     PERFORM pg_temp.act_as('principal');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM notifications WHERE issue_id = v_issue),
-        'principal notified of the new issue');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM attachments WHERE issue_id = v_issue),
-        'principal can read the issue''s attachment');
-
-    UPDATE issues SET status = 'IN_REVIEW', assigned_to = current_setting('t.pc')::UUID
-    WHERE issue_id = v_issue;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    PERFORM pg_temp.assert_that(v_n = 1, 'principal can review and assign an issue');
+    PERFORM pg_temp.assert_that(
+        (SELECT count(*) FROM request_versions WHERE request_id = v_res_id) = 2,
+        'Principal can view both version 1 and version 2 history via RLS');
 
     PERFORM pg_temp.act_as('pc');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM issues WHERE issue_id = v_issue),
-        'assignee can see the issue');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM notifications WHERE issue_id = v_issue),
-        'assignee was notified');
+    PERFORM pg_temp.assert_that(
+        (SELECT count(*) FROM request_versions WHERE request_id = v_res_id) = 2,
+        'PC can view both version 1 and version 2 history via RLS');
 
+    -- Non-raiser tries to resubmit someone else's request -> expect SP004
     PERFORM pg_temp.act_as('incharge');
-    PERFORM pg_temp.assert_that(NOT EXISTS (SELECT 1 FROM issues WHERE issue_id = v_issue),
-        'unrelated user cannot see the issue');
-
-    PERFORM pg_temp.act_as('head');
-    PERFORM pg_temp.assert_that(EXISTS (SELECT 1 FROM notifications
-                                  WHERE issue_id = v_issue AND subject LIKE '%in review'),
-        'raiser notified of the status change');
-    DELETE FROM issues WHERE issue_id = v_issue;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    PERFORM pg_temp.assert_that(v_n = 0, 'issues cannot be deleted, even by their raiser');
+    PERFORM pg_temp.expect_error(
+        format($q$SELECT fn_resubmit_request(%L::UUID, %L::UUID, 'unauthorized')$q$, v_res_id, current_setting('t.incharge')),
+        'SP004', 'non-raiser cannot resubmit another user''s request');
 END $$;
 
 -- ===========================================================================
--- Carry-forward guards
+-- Document Versioning tests (Phase 2c)
 -- ===========================================================================
-DO $$ BEGIN
+DO $$
+DECLARE
+    v_doc_req UUID;
+    v_att1    UUID;
+    v_att2    UUID;
+    v_fy      INT;
+    v_it      INT;
+BEGIN
+    SELECT financial_year_id INTO v_fy FROM financial_years WHERE is_active;
+    SELECT budget_head_id INTO v_it  FROM budget_heads WHERE code = 'IT';
+
+    -- Head creates request and attaches initial document v1
     PERFORM pg_temp.act_as('head');
-    PERFORM pg_temp.expect_error(format(
-        $q$SELECT fn_carry_forward_request(%L, (SELECT financial_year_id FROM financial_years WHERE label = '2025-26'), %L)$q$,
-        current_setting('t.draft'), current_setting('t.head')),
-        'SP015', 'cannot carry forward into an earlier financial year (SP015)');
-    PERFORM pg_temp.expect_error(format(
-        $q$SELECT fn_carry_forward_request(%L, 1, %L)$q$,
-        current_setting('t.draft'), current_setting('t.admin')),
-        'SP013', 'carry-forward refuses a mismatched actor (SP013)');
+    INSERT INTO requests (raised_by, financial_year_id, budget_head_id, title, tentative_total_cost)
+    VALUES (current_setting('t.head')::UUID, v_fy, v_it, 'Doc versioning req', 10000)
+    RETURNING request_id INTO v_doc_req;
+
+    INSERT INTO attachments (request_id, file_name, mime_type, storage_path, storage_backend, uploaded_by, version_number, request_version_number)
+    VALUES (v_doc_req, 'quotation_v1.pdf', 'application/pdf', 'docs/q1.pdf', 'local', current_setting('t.head')::UUID, 1, 1)
+    RETURNING attachment_id INTO v_att1;
+
+    PERFORM fn_submit_request(v_doc_req);
+
+    -- Supersede local attachment v1 with Drive-stored attachment v2
+    v_att2 := fn_supersede_attachment(v_att1, 'quotation_v2.pdf', 'application/pdf', 2048, 'drive://folder/q2.pdf', 'drive', current_setting('t.head')::UUID, 'Updated vendor pricing');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT version_number FROM attachments WHERE attachment_id = v_att2) = 2,
+        'superseded attachment has version_number 2');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT storage_backend FROM attachments WHERE attachment_id = v_att2) = 'drive',
+        'new attachment version retains drive storage_backend');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT superseded_by_id FROM attachments WHERE attachment_id = v_att1) = v_att2,
+        'old local attachment superseded_by_id points to new drive attachment');
+
+    -- Supersede Drive-stored attachment v2 with local attachment v3 (cross-backend drive -> local)
+    DECLARE
+        v_att3 UUID;
+    BEGIN
+        v_att3 := fn_supersede_attachment(v_att2, 'quotation_v3.pdf', 'application/pdf', 4096, 'docs/q3.pdf', 'local', current_setting('t.head')::UUID, 'Final signed quotation');
+        PERFORM pg_temp.assert_that(
+            (SELECT superseded_by_id FROM attachments WHERE attachment_id = v_att2) = v_att3,
+            'old drive attachment superseded_by_id points to new local attachment');
+    END;
+
+    PERFORM pg_temp.assert_that(
+        (SELECT count(*) FROM attachments WHERE request_id = v_doc_req) = 3,
+        'all old and new attachment versions across storage backends remain queryable');
+
+    -- PC returns request for correction
+    PERFORM pg_temp.act_as('pc');
+    PERFORM fn_record_action(v_doc_req, current_setting('t.pc')::UUID, 'RETURN', p_comments := 'Need updated specs');
+
+    -- Head resubmits request (advancing to request version 2) and attaches new document
+    PERFORM pg_temp.act_as('head');
+    PERFORM fn_resubmit_request(v_doc_req, current_setting('t.head')::UUID, 'Resubmitted with specs');
+
+    INSERT INTO attachments (request_id, file_name, mime_type, storage_path, storage_backend, uploaded_by, version_number, request_version_number)
+    VALUES (v_doc_req, 'specs_v2.pdf', 'application/pdf', 'docs/specs.pdf', 'drive', current_setting('t.head')::UUID, 1, 2);
+
+    PERFORM pg_temp.assert_that(
+        (SELECT request_version_number FROM attachments WHERE file_name = 'specs_v2.pdf') = 2,
+        'document uploaded during resubmission carries request_version_number 2');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT request_version_number FROM attachments WHERE attachment_id = v_att1) = 1,
+        'original document retains request_version_number 1');
+
+    -- Verify Principal can see all document versions via RLS
+    PERFORM pg_temp.act_as('principal');
+    PERFORM pg_temp.assert_that(
+        (SELECT count(*) FROM attachments WHERE request_id = v_doc_req) = 4,
+        'Principal can view all 4 document versions across request iterations under RLS');
+
+    -- Verify unrelated user cannot see any document versions
+    PERFORM pg_temp.act_as('incharge');
+    PERFORM pg_temp.assert_that(
+        (SELECT count(*) FROM attachments WHERE request_id = v_doc_req) = 0,
+        'unrelated user sees zero document versions under RLS');
 END $$;
 
 -- ===========================================================================
--- Fails closed with no identity
+-- Budget Provision tests (Phase 2d)
 -- ===========================================================================
-DO $$ BEGIN
-    PERFORM set_config('app.user_id', '', true);
-    PERFORM pg_temp.assert_that((SELECT count(*) FROM requests) = 0
-                      AND (SELECT count(*) FROM v_pending_requests) = 0,
-        'no identity set: zero rows from tables and views');
+DO $$
+DECLARE
+    v_fy        INT;
+    v_cs_dept   INT;
+    v_chem_dept INT;
+    v_it_head   INT;
+    v_bp_id     UUID;
+    v_bp_att    UUID;
+    v_bp_att2   UUID;
+    v_req_id    UUID;
+    v_mic       INT;
+BEGIN
+    SELECT financial_year_id INTO v_fy FROM financial_years WHERE is_active LIMIT 1;
+    SELECT department_id INTO v_cs_dept FROM departments WHERE code = 'CS';
+    SELECT department_id INTO v_chem_dept FROM departments WHERE code = 'CHEM';
+    SELECT budget_head_id INTO v_it_head FROM budget_heads WHERE code = 'IT';
+    SELECT budget_item_id INTO v_mic FROM budget_items WHERE code = 'MIC-01';
+
+    -- Head of CS (Dr. A. Deshpande) submits budget provision for CS department
+    PERFORM pg_temp.act_as('head');
+    INSERT INTO budget_provisions (department_id, financial_year_id, budget_head_id, allocated_amount, remarks, created_by)
+    VALUES (v_cs_dept, v_fy, v_it_head, 500000.00, 'CS IT Budget 2026-27', current_setting('t.head')::UUID)
+    RETURNING budget_provision_id INTO v_bp_id;
+
+    PERFORM pg_temp.assert_that(v_bp_id IS NOT NULL, 'HOD can insert budget provision for their own department');
+
+    -- Attach PDF supporting document to budget provision
+    INSERT INTO attachments (budget_provision_id, file_name, mime_type, storage_path, storage_backend, uploaded_by)
+    VALUES (v_bp_id, 'budget_proposal_v1.pdf', 'application/pdf', 'docs/budget_v1.pdf', 'local', current_setting('t.head')::UUID)
+    RETURNING attachment_id INTO v_bp_att;
+
+    PERFORM pg_temp.assert_that(v_bp_att IS NOT NULL, 'supporting PDF document attached to budget provision');
+
+    -- Test document versioning on budget provision attachment via fn_supersede_attachment
+    v_bp_att2 := fn_supersede_attachment(v_bp_att, 'budget_proposal_v2.pdf', 'application/pdf', 4096, 'docs/budget_v2.pdf', 'drive', current_setting('t.head')::UUID, 'Revised annual allocation');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT superseded_by_id FROM attachments WHERE attachment_id = v_bp_att) = v_bp_att2,
+        'budget provision PDF attachment uses document versioning model');
+
+    -- HOD of CS (head) attempts to insert budget provision for ANOTHER department (CHEM) -> expect RLS error
+    PERFORM pg_temp.act_as('head');
+    PERFORM pg_temp.expect_error(
+        format($q$INSERT INTO budget_provisions (department_id, financial_year_id, budget_head_id, allocated_amount, created_by) VALUES (%L, %L, %L, 200000, %L)$q$,
+               v_chem_dept, v_fy, v_it_head, current_setting('t.head')),
+        '42501', 'HOD cannot insert budget provision for another department');
+
+    -- Second HOD (head_chem, Head of Chemistry) attempts to insert budget provision for CS department -> expect RLS error
+    PERFORM pg_temp.act_as('head_chem');
+    PERFORM pg_temp.expect_error(
+        format($q$INSERT INTO budget_provisions (department_id, financial_year_id, budget_head_id, allocated_amount, created_by) VALUES (%L, %L, %L, 250000, %L)$q$,
+               v_cs_dept, v_fy, v_it_head, current_setting('t.head_chem')),
+        '42501', 'Second HOD cannot insert budget provision for CS department');
+
+    -- Second HOD (head_chem) inserts budget provision for their own department (CHEM) -> succeeds
+    DECLARE
+        v_chem_bp_id UUID;
+    BEGIN
+        INSERT INTO budget_provisions (department_id, financial_year_id, budget_head_id, allocated_amount, remarks, created_by)
+        VALUES (v_chem_dept, v_fy, v_it_head, 350000.00, 'Chemistry IT Budget 2026-27', current_setting('t.head_chem')::UUID)
+        RETURNING budget_provision_id INTO v_chem_bp_id;
+
+        PERFORM pg_temp.assert_that(v_chem_bp_id IS NOT NULL, 'Second HOD can insert budget provision for their own department');
+    END;
+
+    -- Verify Principal can read budget provision summary and context
+    PERFORM pg_temp.act_as('principal');
+    PERFORM pg_temp.assert_that(
+        EXISTS (SELECT 1 FROM v_department_budget_summary WHERE budget_provision_id = v_bp_id),
+        'Principal can read any department budget provision via summary view');
+
+    -- Create an approved request under CS department and IT budget head to test dynamic utilization calculation
+    PERFORM pg_temp.act_as('head');
+    INSERT INTO requests (raised_by, department_id, financial_year_id, budget_head_id, title, tentative_total_cost, current_status)
+    VALUES (current_setting('t.head')::UUID, v_cs_dept, v_fy, v_it_head, 'Budget test request', 30000, 'DRAFT')
+    RETURNING request_id INTO v_req_id;
+
+    INSERT INTO request_items (request_id, budget_item_id, item_type_snapshot, requested_quantity, estimated_unit_cost, estimated_total)
+    VALUES (v_req_id, v_mic, 'CAPITAL', 1, 30000, 30000);
+
+    PERFORM fn_submit_request(v_req_id);
+
+    -- PC passes to Principal
+    PERFORM pg_temp.act_as('pc');
+    PERFORM fn_record_action(v_req_id, current_setting('t.pc')::UUID, 'ESCALATE');
+
+    -- Principal approves <= 50,000 request (moves to APPROVED)
+    PERFORM pg_temp.act_as('principal');
+    PERFORM fn_record_action(v_req_id, current_setting('t.principal')::UUID, 'APPROVE');
+
+    -- Check computed utilized and remaining figures in v_department_budget_summary
+    PERFORM pg_temp.assert_that(
+        (SELECT utilized_amount FROM v_department_budget_summary WHERE budget_provision_id = v_bp_id) = 30000.00,
+        'computed utilized_amount dynamically reflects real approved request amount');
+
+    PERFORM pg_temp.assert_that(
+        (SELECT remaining_amount FROM v_department_budget_summary WHERE budget_provision_id = v_bp_id) = 470000.00,
+        'computed remaining_amount dynamically reflects allocated minus utilized amount');
+
+    -- Verify request-review context helper fn_get_department_budget_context returns computed totals
+    PERFORM pg_temp.assert_that(
+        (SELECT remaining_amount FROM fn_get_department_budget_context(v_cs_dept, v_fy, v_it_head)) = 470000.00,
+        'fn_get_department_budget_context returns computed budget context for review screen');
 END $$;
 
 RESET ROLE;

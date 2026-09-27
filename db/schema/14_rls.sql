@@ -202,6 +202,25 @@ CREATE POLICY requests_approver_update ON requests
             WHERE sa.user_id = app_current_user_id()
               AND target.sequence_no >= mine.sequence_no
         )
+        AND NOT (
+            requests.current_status IN ('APPROVED', 'PARTIALLY_APPROVED')
+            AND EXISTS (
+                SELECT 1 FROM stage_approvers sa
+                JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+                WHERE sa.user_id = app_current_user_id()
+                  AND ws.code = 'PURCHASE_COMMITTEE'
+            )
+        )
+        AND NOT (
+            requests.current_status IN ('APPROVED', 'PARTIALLY_APPROVED')
+            AND requests.tentative_total_cost > 50000
+            AND EXISTS (
+                SELECT 1 FROM stage_approvers sa
+                JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+                WHERE sa.user_id = app_current_user_id()
+                  AND ws.code = 'PRINCIPAL'
+            )
+        )
     );
 
 -- Line items follow their parent request.
@@ -304,6 +323,9 @@ CREATE POLICY attachments_read ON attachments
         OR (request_id IS NOT NULL
             AND (app_can_see_request(request_id) OR app_principal_can_read(request_id)))
         OR (issue_id IS NOT NULL AND app_can_see_issue(issue_id))
+        OR (budget_provision_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM budget_provisions bp WHERE bp.budget_provision_id = attachments.budget_provision_id
+        ))
     );
 
 CREATE POLICY attachments_insert ON attachments
@@ -314,12 +336,55 @@ CREATE POLICY attachments_insert ON attachments
             app_has_role('ADMIN')
             OR (request_id IS NOT NULL AND app_can_see_request(request_id))
             OR (issue_id   IS NOT NULL AND app_can_see_issue(issue_id))
+            OR (budget_provision_id IS NOT NULL AND (
+                app_has_role('ADMIN')
+                OR (app_has_role('HEAD') AND EXISTS (
+                    SELECT 1 FROM budget_provisions bp
+                    WHERE bp.budget_provision_id = attachments.budget_provision_id
+                      AND (bp.department_id = (SELECT department_id FROM users WHERE user_id = app_current_user_id()) OR bp.created_by = app_current_user_id())
+                ))
+            ))
         )
     );
 
 CREATE POLICY attachments_delete ON attachments
     FOR DELETE
     USING (app_has_role('ADMIN') OR uploaded_by = app_current_user_id());
+
+-- Budget Provisions RLS
+ALTER TABLE budget_provisions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY budget_provisions_read ON budget_provisions
+    FOR SELECT TO app_user
+    USING (
+        app_has_role('ADMIN')
+        OR app_has_role('PRINCIPAL')
+        OR app_has_role('PURCHASE_COMMITTEE')
+        OR app_has_role('CDC_GRANT_MEMBER')
+        OR app_has_role('CDC_NON_GRANT_MEMBER')
+        OR app_has_role('CHAIRMAN')
+        OR app_has_role('VICE_PRESIDENT')
+        OR (
+            department_id = (SELECT department_id FROM users WHERE user_id = app_current_user_id())
+        )
+        OR created_by = app_current_user_id()
+    );
+
+CREATE POLICY budget_provisions_write ON budget_provisions
+    FOR ALL TO app_user
+    USING (
+        app_has_role('ADMIN')
+        OR (
+            app_has_role('HEAD')
+            AND department_id = (SELECT department_id FROM users WHERE user_id = app_current_user_id())
+        )
+    ) WITH CHECK (
+        app_has_role('ADMIN')
+        OR (
+            app_has_role('HEAD')
+            AND department_id = (SELECT department_id FROM users WHERE user_id = app_current_user_id())
+        )
+    );
 
 -- Non-financial issues: raiser, assignee, escalation target, Principal, Admin.
 -- Split so the Principal and assignee can move an issue along (review,
@@ -361,3 +426,39 @@ CREATE POLICY audit_logs_admin_read ON audit_logs
 
 CREATE POLICY audit_logs_insert ON audit_logs
     FOR INSERT WITH CHECK (true);
+
+-- Correction requests follow request visibility.
+ALTER TABLE correction_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY correction_requests_read ON correction_requests
+    FOR SELECT
+    USING (
+        app_has_role('ADMIN')
+        OR app_can_see_request(request_id)
+        OR app_principal_can_read(request_id)
+    );
+
+CREATE POLICY correction_requests_insert ON correction_requests
+    FOR INSERT
+    WITH CHECK (
+        app_has_role('ADMIN')
+        OR app_can_see_request(request_id)
+    );
+
+-- Version snapshots follow request visibility.
+ALTER TABLE request_versions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY request_versions_read ON request_versions
+    FOR SELECT
+    USING (
+        app_has_role('ADMIN')
+        OR app_can_see_request(request_id)
+        OR app_principal_can_read(request_id)
+    );
+
+CREATE POLICY request_versions_insert ON request_versions
+    FOR INSERT
+    WITH CHECK (
+        app_has_role('ADMIN')
+        OR app_can_see_request(request_id)
+    );

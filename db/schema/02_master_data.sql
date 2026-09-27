@@ -8,11 +8,18 @@ CREATE TABLE roles (
     description  TEXT
 );
 
+CREATE TABLE departments (
+    department_id SERIAL PRIMARY KEY,
+    code          TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL
+);
+
 CREATE TABLE users (
     user_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email          CITEXT NOT NULL UNIQUE,
     full_name      TEXT NOT NULL,
     password_hash  TEXT NOT NULL,
+    department_id  INTEGER REFERENCES departments(department_id) ON DELETE SET NULL,
     is_active      BOOLEAN NOT NULL DEFAULT TRUE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -23,12 +30,6 @@ CREATE TABLE user_roles (
     role_id    INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE RESTRICT,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, role_id)
-);
-
-CREATE TABLE departments (
-    department_id SERIAL PRIMARY KEY,
-    code          TEXT NOT NULL UNIQUE,
-    name          TEXT NOT NULL
 );
 
 CREATE TABLE courses (
