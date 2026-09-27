@@ -198,3 +198,48 @@ of email in the filestructure as well. Deploy it so that it will work on the dep
 - **Environment variables & sanitization:** Added `.trim()` parsing to credential
   and email environment variables in `config.js` to safeguard against trailing newlines.
 - **Verified and deployed:** Tested both locally and on the deployed Render service.
+
+## 2026-09-27
+
+### Prompt
+
+Multi-step improvement plan on the `revisit` branch:
+1. Admin User Management panel (no SQL needed to provision accounts)
+2. "Other" option with free-text on all dropdowns in NewRequestModal
+3. Fix Courses (seed data gap)
+4. DecisionPanel color-coded actions
+5. UI/UX pass across all screens
+6. Per-role feature review
+
+### Step 1 Work Completed — Admin User Management
+
+- **New backend router** `server/src/routes/admin.js`: six endpoints, all gated behind `requireRole('ADMIN')`.
+  - `GET  /api/admin/users` — list all users with their roles (joined from `user_roles`)
+  - `GET  /api/admin/roles` — list all available roles from the `roles` table
+  - `POST /api/admin/users` — create user (email, full name, password, role IDs, active flag)
+  - `PATCH /api/admin/users/:id` — edit any field including password and roles
+  - `DELETE /api/admin/users/:id` — soft-deactivate (`is_active = false`), preserves all audit history
+  - `POST /api/admin/users/:id/reactivate` — re-enable a deactivated account
+- **Security**: passwords hashed with bcrypt (cost 12) *before* the DB transaction opens (CPU-bound work outside the pool connection). Admin cannot deactivate their own account.
+- **Mounted** in `server/src/app.js` at `/api/admin`.
+- **New page** `src/pages/UserManagement.jsx`: searchable user table with color-coded role pills, add/edit/deactivate/reactivate actions, and a shared create/edit modal with role multi-select checkboxes, password field, and active toggle.
+- **Sidebar** updated: "User management" added to the Admin portal under Operations.
+- **App.jsx** updated: import and register `user-management` page in PAGES map.
+- Committed and pushed to `revisit` branch.
+
+### Step 2 Work Completed — "Other" option on all dropdowns
+
+**Approach (no schema change):**
+- `department_id` and `course_id` are already nullable FKs — when "Other" is selected, they are left null and the typed name is stored in `extra.customDepartment` / `extra.customCourse`.
+- `urgency` is already in `extra.urgency` — the typed string is saved directly.
+- `budget_head_id` is a required FK — a sentinel `OTHER` row is inserted into `budget_heads`. Custom name stored in `extra.customBudgetHead`.
+- Per-line budget items use sentinel `OTHER` rows (one per budget head). Custom item name stored as `[Custom item: <name>]` prefix in the `remarks` field of `request_items`.
+
+**Migration** `db/migrations/20260927T120000_other_sentinel_items.sql`:
+- Inserts `budget_heads (code='OTHER')` and `budget_items (code='OTHER')` under every head. Fully idempotent via `ON CONFLICT DO NOTHING`.
+
+**Frontend changes:**
+- `NewRequestModal.jsx` — rewritten to detect sentinel selection and reveal an amber-tinted free-text input beneath each affected dropdown. Validation enforces that "Other" fields are not left blank before submission. Items formatted as `[Custom item: ...]` in remarks for the API.
+- `ItemsTable.jsx` — added `parseCustomItem()` helper that strips the `[Custom item: ...]` prefix from remarks and displays it as the proper item name. Downstream (approval screens, history) shows the user-typed name everywhere.
+- `RequestDetailModal.jsx` — subtitle and department/course tiles now read `extra.custom*` values and append `(other)` label for clarity.
+

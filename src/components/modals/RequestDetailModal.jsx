@@ -39,7 +39,7 @@ export const RequestDetailModal = () => {
       isOpen={Boolean(id)}
       onClose={closeRecord}
       title={r ? `${r.requestNumber} — ${r.title}` : 'Request'}
-      subtitle={r ? `${r.budgetHead.name} · FY ${r.financialYear.label}` : undefined}
+      subtitle={r ? `${r.extra?.customBudgetHead ? `${r.extra.customBudgetHead} (other)` : r.budgetHead.name} · FY ${r.financialYear.label}` : undefined}
       maxWidth="max-w-5xl"
     >
       {state.loading && !r && <Loading />}
@@ -85,7 +85,16 @@ export const RequestDetailModal = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             {[
               { icon: User, label: 'Raised by', value: r.raisedBy.name },
-              { icon: Building2, label: 'Department', value: r.department?.name ?? '—', sub: r.course?.name },
+              {
+                icon: Building2,
+                label: 'Department',
+                value: r.extra?.customDepartment
+                  ? `${r.extra.customDepartment} (other)`
+                  : (r.department?.name ?? '—'),
+                sub: r.extra?.customCourse
+                  ? `${r.extra.customCourse} (other)`
+                  : r.course?.name,
+              },
               { icon: Calendar, label: 'Submitted', value: r.submittedAt ? date(r.submittedAt) : 'Not yet' },
               { icon: Layers, label: 'Now with', value: r.stage && r.status.startsWith('UNDER_') ? r.stage.name : '—' },
             ].map((f) => (
@@ -96,6 +105,7 @@ export const RequestDetailModal = () => {
               </div>
             ))}
           </div>
+
 
           <Section title={`Items (${r.items.length})`}>
             {r.items.length === 0
