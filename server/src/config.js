@@ -29,6 +29,15 @@ export const config = Object.freeze({
   signingSecret: secret('SIGNING_SECRET'),
   uploadDir: path.resolve(process.env.UPLOAD_DIR ?? 'uploads'),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 10) * 1024 * 1024,
+
+  // Google Drive storage backend.
+  // When both are set, uploads go to Drive instead of the local disk.
+  // GDRIVE_CREDENTIALS = base64-encoded service account JSON key file.
+  // GDRIVE_FOLDER_ID   = ID of the Drive folder shared with the service account.
+  // See docs/GOOGLE_DRIVE_SETUP.md for how to generate these.
+  gDriveCredentials: (process.env.GDRIVE_CREDENTIALS ?? '').trim() || null,
+  gDriveFolderId:    (process.env.GDRIVE_FOLDER_ID    ?? '').trim() || null,
+
   corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000')
     .split(',')
     .map((origin) => origin.trim())

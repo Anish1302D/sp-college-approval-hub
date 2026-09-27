@@ -3,7 +3,10 @@ import multer from 'multer';
 import { config } from '../config.js';
 import { withUser } from '../db.js';
 import { HttpError, conflict, forbidden, notFound } from '../errors.js';
-import { ACCEPTED_TYPES, absolutePath, cleanFileName, detectType, removeFile, saveFile } from '../storage.js';
+import {
+  ACCEPTED_TYPES, USE_DRIVE, absolutePath, cleanFileName,
+  detectType, removeFile, saveFile, streamFromDrive,
+} from '../storage.js';
 import { param } from '../validate.js';
 
 export const attachmentsRouter = Router();
@@ -114,13 +117,27 @@ attachmentsRouter.get('/attachments/:id', async (req, res) => {
     )).rows[0]);
   if (!row) throw notFound('Attachment not found');
 
-  res.type(row.mime_type);
-  res.download(absolutePath(row.storage_path), row.file_name, (err) => {
-    if (err && !res.headersSent) {
-      res.status(err.code === 'ENOENT' ? 410 : 500)
-        .json({ error: { code: 'FILE_UNAVAILABLE', message: 'The stored file is missing' } });
+  if (USE_DRIVE) {
+    // Stream from Google Drive through the API server so the download stays
+    // authenticated — the Drive file is private to the service account.
+    try {
+      await streamFromDrive(row.storage_path, res, row.file_name, row.mime_type);
+    } catch (err) {
+      if (!res.headersSent) {
+        const code = (err.code === 404 || err.status === 404) ? 410 : 500;
+        res.status(code).json({ error: { code: 'FILE_UNAVAILABLE', message: 'The stored file is missing' } });
+      }
     }
-  });
+  } else {
+    // Local disk — use Express's built-in streaming download.
+    res.type(row.mime_type);
+    res.download(absolutePath(row.storage_path), row.file_name, (err) => {
+      if (err && !res.headersSent) {
+        res.status(err.code === 'ENOENT' ? 410 : 500)
+          .json({ error: { code: 'FILE_UNAVAILABLE', message: 'The stored file is missing' } });
+      }
+    });
+  }
 });
 
 // Removing evidence from a decided request would weaken the record, so files
