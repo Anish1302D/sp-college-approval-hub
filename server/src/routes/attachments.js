@@ -25,9 +25,14 @@ const attachmentRow = (r) => ({
   id: r.attachment_id,
   requestId: r.request_id,
   issueId: r.issue_id,
+  budgetProvisionId: r.budget_provision_id ?? null,
   fileName: r.file_name,
   mimeType: r.mime_type,
   sizeBytes: r.size_bytes,
+  versionNumber: r.version_number ?? 1,
+  supersededById: r.superseded_by_id ?? null,
+  requestVersionNumber: r.request_version_number ?? 1,
+  replacementReason: r.replacement_reason ?? null,
   uploadedBy: { id: r.uploaded_by, name: r.uploaded_by_name },
   uploadedAt: r.uploaded_at,
 });
@@ -76,6 +81,18 @@ async function store(req, parent, authorise) {
   }
 }
 
+attachmentsRouter.get('/requests/:id/attachments', async (req, res) => {
+  const requestId = param(req, 'id');
+  const rows = await withUser(req.user.id, async (db) =>
+    (await db.query(
+      `SELECT a.*, u.full_name AS uploaded_by_name
+         FROM attachments a JOIN users u ON u.user_id = a.uploaded_by
+        WHERE a.request_id = $1 ORDER BY a.version_number ASC, a.uploaded_at ASC`,
+      [requestId],
+    )).rows);
+  res.json(rows.map(attachmentRow));
+});
+
 attachmentsRouter.post('/requests/:id/attachments', upload, async (req, res) => {
   const requestId = param(req, 'id');
   const row = await store(req, { requestId }, async (db) => {
@@ -94,6 +111,37 @@ attachmentsRouter.post('/requests/:id/attachments', upload, async (req, res) => 
     }
   });
   res.status(201).json(attachmentRow(row));
+});
+
+attachmentsRouter.post('/attachments/:id/supersede', upload, async (req, res) => {
+  const oldAttachmentId = param(req, 'id');
+  const replacementReason = req.body?.reason || null;
+  const type = acceptedFile(req);
+
+  let savedFile;
+  try {
+    const row = await withUser(req.user.id, async (db) => {
+      savedFile = await saveFile(req.file.buffer, type.ext);
+      const { rows } = await db.query(
+        'SELECT fn_supersede_attachment($1, $2, $3, $4, $5, $6, $7, $8) AS new_id',
+        [
+          oldAttachmentId, cleanFileName(req.file.originalname), type.mime,
+          req.file.size, savedFile.storagePath, savedFile.backend,
+          req.user.id, replacementReason,
+        ],
+      );
+      const newId = rows[0].new_id;
+      return (await db.query(
+        `SELECT a.*, u.full_name AS uploaded_by_name FROM attachments a
+           JOIN users u ON u.user_id = a.uploaded_by WHERE a.attachment_id = $1`,
+        [newId],
+      )).rows[0];
+    });
+    res.status(201).json(attachmentRow(row));
+  } catch (err) {
+    if (savedFile?.storagePath) await removeFile(savedFile.storagePath, savedFile.backend);
+    throw err;
+  }
 });
 
 attachmentsRouter.post('/issues/:id/attachments', upload, async (req, res) => {

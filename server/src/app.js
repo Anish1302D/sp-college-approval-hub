@@ -8,6 +8,7 @@ import { HttpError, errorHandler } from './errors.js';
 import { adminRouter } from './routes/admin.js';
 import { attachmentsRouter } from './routes/attachments.js';
 import { authRouter } from './routes/auth.js';
+import { budgetRouter } from './routes/budget.js';
 import { commentsRouter } from './routes/comments.js';
 import { inventoryRouter } from './routes/inventory.js';
 import { issuesRouter } from './routes/issues.js';
@@ -51,6 +52,7 @@ export function createApp() {
   api.use('/requests/:id/comments', commentsRouter);
   api.use('/requests', requestsRouter);
   api.use('/issues', issuesRouter);
+  api.use(budgetRouter);
   api.use(masterRouter);
   api.use(attachmentsRouter);
   api.use(inventoryRouter);

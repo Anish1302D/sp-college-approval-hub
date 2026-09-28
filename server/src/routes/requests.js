@@ -62,14 +62,25 @@ async function resolvePrincipal() {
  * Resolve the approvers staffed at a particular workflow stage.
  * @returns {Array<{ email: string, name: string }>}
  */
-async function resolveStageApprovers(stageId) {
-  if (!stageId) return [];
+async function resolveCdcApprovers() {
   try {
     const { rows } = await pool.query(
       `SELECT u.full_name, u.email FROM stage_approvers sa
          JOIN users u ON u.user_id = sa.user_id
-        WHERE sa.stage_id = $1 AND u.is_active`,
-      [stageId],
+         JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+        WHERE ws.code = 'CDC' AND u.is_active`,
+    );
+    return rows.map((r) => ({ email: r.email, name: r.full_name }));
+  } catch { return []; }
+}
+
+async function resolveFinalApprovers() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.full_name, u.email FROM stage_approvers sa
+         JOIN users u ON u.user_id = sa.user_id
+         JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+        WHERE ws.code = 'FINAL_AUTHORITY' AND u.is_active`,
     );
     return rows.map((r) => ({ email: r.email, name: r.full_name }));
   } catch { return []; }
@@ -100,9 +111,6 @@ function notifyRequestAsync({ request, actorId, action, comments, rejectionReaso
       const now = new Date();
 
       if (action === 'SUBMITTED') {
-        // ─── New submission → notify the principal (configured email) ───
-        // Stage approvers may have placeholder emails from seeding, so we
-        // always use the configured principalEmail for reliable delivery.
         const emailData = buildRequestStatusEmail({
           request: { ...request, requesterEmail: requester?.email },
           recipientEmail: principal.email,
@@ -125,54 +133,105 @@ function notifyRequestAsync({ request, actorId, action, comments, rejectionReaso
         });
 
         await sendMail(emailData);
-      } else if (['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'ESCALATE'].includes(action)) {
-        // ─── Decision → notify the requester ───
+      } else if (['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'ESCALATE', 'FORWARD', 'RETURN', 'RESUBMIT'].includes(action)) {
         const typeMap = {
           APPROVE: 'APPROVAL',
           PARTIAL_APPROVE: 'PARTIAL APPROVAL',
           REJECT: 'REJECTION',
           ESCALATE: 'ESCALATION',
+          FORWARD: 'ESCALATION',
+          RETURN: 'CORRECTION REQUESTED',
+          RESUBMIT: 'RESUBMITTED',
         };
         const actionMap = {
           APPROVE: 'Request Fully Approved',
           PARTIAL_APPROVE: 'Request Partially Approved',
           REJECT: 'Request Rejected',
           ESCALATE: 'Request Escalated to Next Stage',
+          FORWARD: 'Request Forwarded to Next Stage',
+          RETURN: 'Request Sent Back for Correction',
+          RESUBMIT: 'Request Resubmitted by Requester',
         };
         const descriptionMap = {
           APPROVE: `Your financial request "${request.title}" has been fully approved by ${actor.full_name}.`,
-          PARTIAL_APPROVE: `Your financial request "${request.title}" has been partially approved by ${actor.full_name}. Some items may have adjusted quantities or amounts.`,
+          PARTIAL_APPROVE: `Your financial request "${request.title}" has been partially approved by ${actor.full_name}.`,
           REJECT: `Your financial request "${request.title}" has been rejected by ${actor.full_name}.`,
           ESCALATE: `Your financial request "${request.title}" has been escalated to the next review stage by ${actor.full_name}.`,
-        };
-        const actionRequiredMap = {
-          APPROVE: 'No further action is required from you. The approved items will proceed to fulfilment.',
-          PARTIAL_APPROVE: 'Please review the approved quantities and amounts. Unapproved items may be revised and resubmitted.',
-          REJECT: 'Please review the rejection reason. You may revise and resubmit the request if needed.',
-          ESCALATE: 'Your request has been escalated for higher-level review. No action is required from you at this time.',
+          FORWARD: `Your financial request "${request.title}" has been forwarded to the next review stage by ${actor.full_name}.`,
+          RETURN: `Your financial request "${request.title}" has been returned for correction by ${actor.full_name}.`,
+          RESUBMIT: `Financial request "${request.title}" has been resubmitted by ${actor.full_name}.`,
         };
 
-        const nextStageLabel = STAGE_LABELS[request.status] || request.stage?.name || '—';
+        // Notify BOTH CDC members on entering CDC stage
+        if (request.status === 'UNDER_CDC_REVIEW') {
+          const cdcApprovers = await resolveCdcApprovers();
+          for (const cdcMember of cdcApprovers) {
+            const emailData = buildRequestStatusEmail({
+              request: { ...request, requesterEmail: requester?.email },
+              recipientEmail: cdcMember.email,
+              recipientName: cdcMember.name,
+              notificationType: 'CDC REVIEW REQUIRED',
+              emailAction: 'Request Awaiting CDC Approval',
+              eventDescription: `Financial request "${request.title}" requires joint CDC review.`,
+              decision: 'PENDING REVIEW',
+              approverName: actor.full_name,
+              approverRole: 'Principal',
+              decisionDate: now,
+              actionRequired: 'Please review and record your CDC decision.',
+              ctaText: 'Review Request',
+              workflowStage: 'CDC Review',
+              nextStage: 'CDC Review',
+              pendingSince: now,
+              pendingDays: 0,
+            });
+            await sendMail(emailData);
+          }
+        }
 
-        // All seeded users have placeholder emails (e.g. head.cs@spcollege.edu).
-        // Always send to the configured principalEmail for reliable delivery.
+        // Notify BOTH Chairman and VP on entering Final Authority stage
+        if (request.status === 'UNDER_FINAL_AUTHORITY_REVIEW') {
+          const finalApprovers = await resolveFinalApprovers();
+          for (const finalMember of finalApprovers) {
+            const emailData = buildRequestStatusEmail({
+              request: { ...request, requesterEmail: requester?.email },
+              recipientEmail: finalMember.email,
+              recipientName: finalMember.name,
+              notificationType: 'FINAL AUTHORITY REVIEW REQUIRED',
+              emailAction: 'Request Awaiting Final Approval',
+              eventDescription: `Financial request "${request.title}" requires joint Chairman/VP review.`,
+              decision: 'PENDING REVIEW',
+              approverName: actor.full_name,
+              approverRole: 'Approver',
+              decisionDate: now,
+              actionRequired: 'Please review and record your final authority decision.',
+              ctaText: 'Review Request',
+              workflowStage: 'Final Authority Review',
+              nextStage: 'Final Authority Review',
+              pendingSince: now,
+              pendingDays: 0,
+            });
+            await sendMail(emailData);
+          }
+        }
+
+        // Notify requester / principal
         const emailData = buildRequestStatusEmail({
           request: { ...request, requesterEmail: requester?.email },
           recipientEmail: principal.email,
           recipientName: requester?.full_name || principal.name,
-          notificationType: typeMap[action],
-          emailAction: actionMap[action],
-          eventDescription: descriptionMap[action],
-          decision: typeMap[action],
+          notificationType: typeMap[action] || 'NOTIFICATION',
+          emailAction: actionMap[action] || 'Request Updated',
+          eventDescription: descriptionMap[action] || `Request status updated.`,
+          decision: typeMap[action] || 'UPDATED',
           approverName: actor.full_name,
           approverRole: request.stage?.name || 'Approver',
           decisionDate: now,
           approvalRemarks: comments || null,
           rejectionReason: rejectionReason || null,
-          actionRequired: actionRequiredMap[action],
+          actionRequired: action === 'RETURN' ? 'Please revise the request and resubmit.' : 'No action required.',
           ctaText: 'View Request',
           workflowStage: request.stage?.name || request.status,
-          nextStage: action === 'ESCALATE' ? nextStageLabel : (request.status === 'APPROVED' ? 'Fulfilment' : '—'),
+          nextStage: request.status,
           pendingSince: request.submittedAt || request.createdAt,
           pendingDays: Math.floor((now - new Date(request.submittedAt || request.createdAt)) / 86400000),
         });
@@ -676,6 +735,9 @@ const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('REJECT'), comments: note,
              rejectionReason: z.string().trim().min(3).max(2000) }),
   z.object({ action: z.literal('ESCALATE'), comments: note }),
+  z.object({ action: z.literal('FORWARD'), comments: note }),
+  z.object({ action: z.literal('RETURN'), comments: note,
+             rejectionReason: z.string().trim().min(3).max(2000).optional() }),
 ]);
 
 /**
@@ -758,23 +820,40 @@ requestsRouter.post('/:id/actions', async (req, res) => {
   const requestId = param(req, 'id');
   const body = actionSchema.parse(req.body);
 
+  // TODO: Auth middleware role checks go here
+  const dbAction = body.action === 'FORWARD' ? 'ESCALATE' : body.action;
+
   const result = await withUser(req.user.id, async (db) => {
-    const visible = await db.query('SELECT 1 FROM requests WHERE request_id = $1', [requestId]);
-    if (!visible.rowCount) throw notFound('Request not found');
+    const { rows: stageRows } = await db.query(
+      `SELECT r.current_stage_id, ws.code AS stage_code, r.tentative_total_cost
+         FROM requests r
+         LEFT JOIN workflow_stages ws ON ws.stage_id = r.current_stage_id
+        WHERE r.request_id = $1`,
+      [requestId],
+    );
+    if (!stageRows[0]) throw notFound('Request not found');
+    const stageCode = stageRows[0].stage_code;
+
+    // Defense-in-depth: PC can NOT approve or reject
+    if (stageCode === 'PURCHASE_COMMITTEE' && ['APPROVE', 'PARTIAL_APPROVE'].includes(dbAction)) {
+      throw unprocessable('Purchase Committee performs validity review only and cannot approve requests');
+    }
+
+    // Principal rules:
+    // TODO: Reject/Return for Principal on requests > ₹50,000 pending decision
+    // Note: Principal approves <= 50k, and reviews & forwards (> 50k) via ESCALATE.
 
     const decisions = await buildDecisions(db, requestId, body);
-    const rejectionReason = body.action === 'REJECT' ? body.rejectionReason : null;
+    const rejectionReason = dbAction === 'REJECT' ? (body.rejectionReason || null) : null;
     const signature = seal({
-      requestId, action: body.action, actorId: req.user.id,
+      requestId, action: dbAction, actorId: req.user.id,
       decisions, comments: body.comments, rejectionReason,
     });
 
-    // Authority, the stage transition, item updates, the sanctioned total and
-    // the audit entry all happen inside this one call, atomically.
     const { rows } = await db.query(
       'SELECT fn_record_action($1, $2, $3, $4, $5, $6, $7) AS action_id',
       [
-        requestId, req.user.id, body.action,
+        requestId, req.user.id, dbAction,
         decisions.length
           ? JSON.stringify(decisions.map((d) => ({
             request_item_id: d.requestItemId,
@@ -793,12 +872,62 @@ requestsRouter.post('/:id/actions', async (req, res) => {
   notifyRequestAsync({
     request: result.request,
     actorId: req.user.id,
-    action: body.action,
+    action: dbAction,
     comments: body.comments,
-    rejectionReason: body.action === 'REJECT' ? body.rejectionReason : null,
+    rejectionReason: dbAction === 'REJECT' ? body.rejectionReason : null,
   });
 
   res.status(201).json(result);
+});
+
+requestsRouter.post('/:id/resubmit', async (req, res) => {
+  const requestId = param(req, 'id');
+  const body = z.object({ comments: note }).parse(req.body || {});
+
+  // TODO: Auth middleware role check for requester resubmission goes here
+  const detail = await withUser(req.user.id, async (db) => {
+    const { rows } = await db.query(
+      'SELECT fn_resubmit_request($1, $2, $3) AS new_version',
+      [requestId, req.user.id, body.comments || null],
+    );
+    if (!rows[0]) throw notFound('Request not found or resubmission failed');
+    return requireDetail(db, requestId, req.user);
+  });
+
+  notifyRequestAsync({ request: detail, actorId: req.user.id, action: 'RESUBMIT', comments: body.comments });
+
+  res.json(detail);
+});
+
+requestsRouter.get('/:id/budget-context', async (req, res) => {
+  const requestId = param(req, 'id');
+
+  // TODO: Auth middleware role check for reading budget context goes here
+  const ctx = await withUser(req.user.id, async (db) => {
+    const { rows: reqRows } = await db.query(
+      'SELECT department_id, financial_year_id, budget_head_id FROM requests WHERE request_id = $1',
+      [requestId],
+    );
+    if (!reqRows[0]) throw notFound('Request not found');
+    const r = reqRows[0];
+    if (!r.department_id) return null;
+    const { rows } = await db.query(
+      'SELECT * FROM fn_get_department_budget_context($1, $2, $3)',
+      [r.department_id, r.financial_year_id, r.budget_head_id],
+    );
+    const b = rows[0];
+    if (!b) return null;
+    return {
+      budgetProvisionId: b.budget_provision_id,
+      allocatedAmount: Number(b.allocated_amount),
+      utilizedAmount: Number(b.utilized_amount),
+      committedAmount: Number(b.committed_amount),
+      remainingAmount: Number(b.remaining_amount),
+      availableAmount: Number(b.available_amount),
+    };
+  });
+
+  res.json(ctx);
 });
 
 requestsRouter.get('/:id/timeline', async (req, res) => {
