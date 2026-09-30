@@ -13,25 +13,27 @@
 -- either skip this file entirely or reset every password.
 -- ===========================================================================
 
-INSERT INTO users (email, full_name, password_hash) VALUES
-    ('head.cs@spcollege.edu',    'Dr. A. Deshpande (Head, CS)',   crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('incharge@spcollege.edu',   'S. Kulkarni (Activity In-charge)', crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('pc1@spcollege.edu',        'R. Joshi (Purchase Committee)', crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('pc2@spcollege.edu',        'M. Patil (Purchase Committee)', crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('principal@spcollege.edu',  'Dr. V. Rane (Principal)',       crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('cdc.grant@spcollege.edu',  'P. Shinde (CDC Grant)',         crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('cdc.nongrant@spcollege.edu','N. Gokhale (CDC Non-Grant)',   crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('chairman@spcollege.edu',   'Shri. K. Bhave (Chairman)',     crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('vp@spcollege.edu',         'Smt. L. Karve (Vice President)',crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('clerk@spcollege.edu',      'D. Sawant (Clerk)',             crypt('ChangeMe#2026', gen_salt('bf', 12))),
-    ('admin@spcollege.edu',      'System Administrator',          crypt('ChangeMe#2026', gen_salt('bf', 12)))
-ON CONFLICT (email) DO NOTHING;
+INSERT INTO users (email, full_name, password_hash, department_id) VALUES
+    ('head.cs@spcollege.edu',    'Dr. A. Deshpande (Head, CS)',   crypt('ChangeMe#2026', gen_salt('bf', 12)), (SELECT department_id FROM departments WHERE code = 'CS')),
+    ('head.chem@spcollege.edu',  'Dr. B. Chemist (Head, Chemistry)', crypt('ChangeMe#2026', gen_salt('bf', 12)), (SELECT department_id FROM departments WHERE code = 'CHEM')),
+    ('incharge@spcollege.edu',   'S. Kulkarni (Activity In-charge)', crypt('ChangeMe#2026', gen_salt('bf', 12)), (SELECT department_id FROM departments WHERE code = 'CS')),
+    ('pc1@spcollege.edu',        'R. Joshi (Purchase Committee)', crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('pc2@spcollege.edu',        'M. Patil (Purchase Committee)', crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('principal@spcollege.edu',  'Dr. V. Rane (Principal)',       crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('cdc.grant@spcollege.edu',  'P. Shinde (CDC Grant)',         crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('cdc.nongrant@spcollege.edu','N. Gokhale (CDC Non-Grant)',   crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('chairman@spcollege.edu',   'Shri. K. Bhave (Chairman)',     crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('vp@spcollege.edu',         'Smt. L. Karve (Vice President)',crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('clerk@spcollege.edu',      'D. Sawant (Clerk)',             crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL),
+    ('admin@spcollege.edu',      'System Administrator',          crypt('ChangeMe#2026', gen_salt('bf', 12)), NULL)
+ON CONFLICT (email) DO UPDATE SET department_id = EXCLUDED.department_id;
 
 -- Role assignments.
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
 FROM (VALUES
     ('head.cs@spcollege.edu',      'HEAD'),
+    ('head.chem@spcollege.edu',    'HEAD'),
     ('incharge@spcollege.edu',     'ACTIVITY_INCHARGE'),
     ('pc1@spcollege.edu',          'PURCHASE_COMMITTEE'),
     ('pc2@spcollege.edu',          'PURCHASE_COMMITTEE'),

@@ -32,6 +32,34 @@ async function sqlFiles(dir) {
   return names.map((n) => path.join(root, dir, n));
 }
 
+function getAppUserCredentials() {
+  const urlStr = process.env.DATABASE_URL ?? 'postgresql://app_user:CHANGE_ME@localhost:5433/spc_approval';
+  try {
+    const url = new URL(urlStr);
+    return {
+      user: url.username || 'app_user',
+      password: url.password || '',
+    };
+  } catch {
+    return { user: 'app_user', password: '' };
+  }
+}
+
+async function canUserAuthenticate(database, user, password) {
+  if (!password) return false;
+  const url = new URL(adminUrl(database));
+  url.username = user;
+  url.password = password;
+  const client = new pg.Client({ connectionString: url.toString() });
+  try {
+    await client.connect();
+    await client.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function resetTestDatabase() {
   const admin = new pg.Client({ connectionString: adminUrl('postgres') });
   await admin.connect();
@@ -50,6 +78,11 @@ export async function resetTestDatabase() {
       } catch (err) {
         throw new Error(`failed loading ${path.relative(root, file)}: ${err.message}`);
       }
+    }
+    const creds = getAppUserCredentials();
+    const canConnect = await canUserAuthenticate(TEST_DB, creds.user, creds.password);
+    if (!canConnect && creds.password) {
+      await db.query(`ALTER ROLE ${db.escapeIdentifier(creds.user)} WITH LOGIN PASSWORD ${db.escapeLiteral(creds.password)}`);
     }
     return files.length;
   } finally {

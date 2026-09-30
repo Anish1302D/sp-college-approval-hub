@@ -8,6 +8,28 @@ INSERT INTO departments (code, name) VALUES
     ('ADMIN','Administration')
 ON CONFLICT (code) DO NOTHING;
 
+INSERT INTO courses (department_id, code, name)
+SELECT d.department_id, v.code, v.name
+FROM (VALUES
+    -- Computer Science
+    ('CS', 'BCA',    'Bachelor of Computer Applications'),
+    ('CS', 'MCA',    'Master of Computer Applications'),
+    ('CS', 'BSC-CS', 'B.Sc. Computer Science'),
+    ('CS', 'MSC-CS', 'M.Sc. Computer Science'),
+    -- Chemistry
+    ('CHEM', 'BSC-CH',   'B.Sc. Chemistry'),
+    ('CHEM', 'MSC-CH',   'M.Sc. Chemistry'),
+    ('CHEM', 'BSC-BIOT', 'B.Sc. Biotechnology'),
+    -- Physics
+    ('PHY', 'BSC-PH',  'B.Sc. Physics'),
+    ('PHY', 'MSC-PH',  'M.Sc. Physics'),
+    ('PHY', 'BSC-ELE', 'B.Sc. Electronics'),
+    -- Administration (college-wide / non-academic)
+    ('ADMIN', 'ADMIN-GEN', 'General Administration')
+) AS v(dept_code, code, name)
+JOIN departments d ON d.code = v.dept_code
+ON CONFLICT (department_id, code) DO NOTHING;
+
 INSERT INTO financial_years (label, start_date, end_date, is_active) VALUES
     ('2025-26', DATE '2025-04-01', DATE '2026-03-31', FALSE),
     ('2026-27', DATE '2026-04-01', DATE '2027-03-31', TRUE)
@@ -20,7 +42,8 @@ INSERT INTO budget_heads (code, name, head_type, description) VALUES
     ('OFFICE', 'Office Expenses',    'REVENUE', 'Stationery, printing, utilities'),
     ('ACAD',   'Academic Activities','REVENUE', 'Seminars, workshops, teaching aids'),
     ('MAINT',  'Maintenance',        'REVENUE', 'Repairs and servicing'),
-    ('STU',    'Student Activities', 'REVENUE', 'Events, clubs, competitions')
+    ('STU',    'Student Activities', 'REVENUE', 'Events, clubs, competitions'),
+    ('OTHER',  'Other (specify)',    'REVENUE', 'Catch-all head for items that do not fit an existing category')
 ON CONFLICT (code) DO NOTHING;
 
 -- Sample budget items under a few heads.
@@ -37,4 +60,15 @@ FROM (VALUES
     ('OFFICE', 'PAPER-01',  'A4 Paper Ream',            'CONSUMABLE', 'ream')
 ) AS v(head_code, code, name, item_type, unit)
 JOIN budget_heads bh ON bh.code = v.head_code
+ON CONFLICT (budget_head_id, code) DO NOTHING;
+
+-- Add one sentinel item under EVERY budget head (including the new OTHER head).
+INSERT INTO budget_items (budget_head_id, code, name, item_type, unit, is_active)
+SELECT bh.budget_head_id,
+       'OTHER',
+       'Other (specify)',
+       'CONSUMABLE',
+       NULL,
+       TRUE
+FROM budget_heads bh
 ON CONFLICT (budget_head_id, code) DO NOTHING;

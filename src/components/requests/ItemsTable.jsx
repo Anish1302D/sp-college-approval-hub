@@ -3,6 +3,8 @@ import { Trash2 } from 'lucide-react';
 import { money, quantity } from '../../api/format';
 import { StatusBadge } from '../ui/StatusBadge';
 
+import { parseCustomItem } from '../../utils/customItem';
+
 /**
  * Line items with requested, approved and unapproved figures side by side —
  * the original request is never overwritten, so all three are always shown
@@ -24,37 +26,40 @@ export const ItemsTable = ({ items, decided, onRemove }) => (
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-50">
-        {items.map((i) => (
-          <tr key={i.id}>
-            <td className="py-2.5 px-3">
-              <p className="font-semibold text-gray-800">{i.budgetItem.name}</p>
-              <p className="text-[10px] text-gray-400 capitalize">{i.itemType.toLowerCase()}{i.remarks ? ` · ${i.remarks}` : ''}</p>
-            </td>
-            <td className="py-2.5 px-3 text-right tabular-nums">{quantity(i.requestedQuantity)} {i.budgetItem.unit ?? ''}</td>
-            <td className="py-2.5 px-3 text-right tabular-nums text-gray-500">{money(i.unitCost)}</td>
-            <td className="py-2.5 px-3 text-right tabular-nums font-semibold text-gray-900">{money(i.estimatedTotal)}</td>
-            {decided && (
-              <td className="py-2.5 px-3 text-right tabular-nums">
-                <span className="font-semibold text-emerald-700">{money(i.approvedAmount)}</span>
-                <span className="block text-[10px] text-gray-400">{quantity(i.approvedQuantity)} of {quantity(i.requestedQuantity)}</span>
+        {items.map((i) => {
+          const { displayName, displayRemarks } = parseCustomItem(i.budgetItem, i.remarks);
+          return (
+            <tr key={i.id}>
+              <td className="py-2.5 px-3">
+                <p className="font-semibold text-gray-800">{displayName}</p>
+                <p className="text-[10px] text-gray-400 capitalize">{i.itemType.toLowerCase()}{displayRemarks ? ` · ${displayRemarks}` : ''}</p>
               </td>
-            )}
-            {decided && (
-              <td className="py-2.5 px-3 text-right tabular-nums text-gray-500">
-                {money(Math.round((i.estimatedTotal - i.approvedAmount) * 100) / 100)}
-                <span className="block text-[10px] text-gray-400">{quantity(i.unapprovedQuantity)} units</span>
-              </td>
-            )}
-            {decided && <td className="py-2.5 px-3"><StatusBadge status={i.status} kind="item" /></td>}
-            {onRemove && (
-              <td className="py-2.5 px-3 text-right">
-                <button onClick={() => onRemove(i)} aria-label={`Remove ${i.budgetItem.name}`} className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </td>
-            )}
-          </tr>
-        ))}
+              <td className="py-2.5 px-3 text-right tabular-nums">{quantity(i.requestedQuantity)} {i.budgetItem.unit ?? ''}</td>
+              <td className="py-2.5 px-3 text-right tabular-nums text-gray-500">{money(i.unitCost)}</td>
+              <td className="py-2.5 px-3 text-right tabular-nums font-semibold text-gray-900">{money(i.estimatedTotal)}</td>
+              {decided && (
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  <span className="font-semibold text-emerald-700">{money(i.approvedAmount)}</span>
+                  <span className="block text-[10px] text-gray-400">{quantity(i.approvedQuantity)} of {quantity(i.requestedQuantity)}</span>
+                </td>
+              )}
+              {decided && (
+                <td className="py-2.5 px-3 text-right tabular-nums text-gray-500">
+                  {money(Math.round((i.estimatedTotal - i.approvedAmount) * 100) / 100)}
+                  <span className="block text-[10px] text-gray-400">{quantity(i.unapprovedQuantity)} units</span>
+                </td>
+              )}
+              {decided && <td className="py-2.5 px-3"><StatusBadge status={i.status} kind="item" /></td>}
+              {onRemove && (
+                <td className="py-2.5 px-3 text-right">
+                  <button onClick={() => onRemove(i)} aria-label={`Remove ${displayName}`} className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </td>
+              )}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   </div>

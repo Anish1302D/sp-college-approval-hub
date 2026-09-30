@@ -23,38 +23,31 @@ CREATE OR REPLACE FUNCTION fn_record_action(
     p_signature_hash    TEXT  DEFAULT NULL
 ) RETURNS UUID AS $$
 DECLARE
-    v_req          requests%ROWTYPE;
-    v_stage_code   workflow_stage_code;
-    v_is_final     BOOLEAN;
-    v_next_stage   INTEGER;
-    v_action_id    UUID;
-    v_signature_id UUID;
-    v_new_status   request_status;
-    v_new_stage    INTEGER;
-    v_total        INTEGER;
-    v_approved     INTEGER;
-    v_rejected     INTEGER;
-    v_decided      INTEGER;
+    v_req                requests%ROWTYPE;
+    v_stage_code         workflow_stage_code;
+    v_is_final           BOOLEAN;
+    v_action_id          UUID;
+    v_signature_id       UUID;
+    v_new_status         request_status;
+    v_new_stage          INTEGER;
+    v_total              INTEGER;
+    v_approved           INTEGER;
+    v_rejected           INTEGER;
+    v_decided            INTEGER;
+    v_principal_stage_id INTEGER;
+    v_cdc_stage_id       INTEGER;
+    v_final_stage_id     INTEGER;
+    v_cdc_count          INTEGER;
+    v_final_count        INTEGER;
 BEGIN
-    -- The authority check below tests p_actor_id against the approver list. If
-    -- that parameter could differ from the logged-in session, a requester could
-    -- pass an approver's id and approve their own request — every RLS policy
-    -- would pass, because they own the row. So when a session identity is set,
-    -- the actor must be that identity. (No identity is set for maintenance run
-    -- directly as a superuser, which RLS does not govern anyway.)
     IF app_current_user_id() IS NOT NULL
        AND p_actor_id IS DISTINCT FROM app_current_user_id() THEN
         RAISE EXCEPTION 'Actor % does not match the authenticated user', p_actor_id
             USING ERRCODE = 'SP013';
     END IF;
 
-    -- Lock the request so two approvers acting at once can't interleave.
     SELECT * INTO v_req FROM requests WHERE request_id = p_request_id FOR UPDATE;
     IF NOT FOUND THEN
-        -- Under RLS, FOR UPDATE sees only rows the caller may UPDATE. A caller
-        -- who can read the request but not act on it (an approver it has moved
-        -- past, or the Principal reading a CDC request) lands here too. Tell
-        -- them they lack authority rather than claiming the request is missing.
         IF EXISTS (SELECT 1 FROM requests WHERE request_id = p_request_id) THEN
             RAISE EXCEPTION 'User % is not an approver at the current stage of this request', p_actor_id
                 USING ERRCODE = 'SP004';
@@ -75,16 +68,36 @@ BEGIN
             USING ERRCODE = 'SP003';
     END IF;
 
+    IF v_req.current_status = 'AWAITING_RESUBMISSION' THEN
+        RAISE EXCEPTION 'Request % is awaiting resubmission by the requester', v_req.request_number
+            USING ERRCODE = 'SP017';
+    END IF;
+
     SELECT code, is_final INTO v_stage_code, v_is_final
     FROM workflow_stages WHERE stage_id = v_req.current_stage_id;
 
-    -- Authority: the actor must be a configured approver at the current stage.
+    SELECT stage_id INTO v_principal_stage_id FROM workflow_stages WHERE code = 'PRINCIPAL';
+    SELECT stage_id INTO v_cdc_stage_id       FROM workflow_stages WHERE code = 'CDC';
+    SELECT stage_id INTO v_final_stage_id     FROM workflow_stages WHERE code = 'FINAL_AUTHORITY';
+
+    -- Authority check
     IF NOT EXISTS (
         SELECT 1 FROM stage_approvers
         WHERE stage_id = v_req.current_stage_id AND user_id = p_actor_id
     ) THEN
         RAISE EXCEPTION 'User % is not an approver at stage %', p_actor_id, v_stage_code
             USING ERRCODE = 'SP004';
+    END IF;
+
+    -- Specific Stage Restrictions
+    IF v_stage_code = 'PURCHASE_COMMITTEE' AND p_action IN ('APPROVE', 'PARTIAL_APPROVE') THEN
+        RAISE EXCEPTION 'Purchase Committee performs validity review only and cannot approve requests'
+            USING ERRCODE = 'SP005';
+    END IF;
+
+    IF v_stage_code = 'PRINCIPAL' AND p_action IN ('APPROVE', 'PARTIAL_APPROVE') AND v_req.tentative_total_cost > 50000 THEN
+        RAISE EXCEPTION 'Principal cannot final-approve requests exceeding ₹50,000'
+            USING ERRCODE = 'SP005';
     END IF;
 
     IF p_action NOT IN ('APPROVE','PARTIAL_APPROVE','REJECT','ESCALATE','RETURN','COMMENT') THEN
@@ -102,6 +115,16 @@ BEGIN
             USING ERRCODE = 'SP007';
     END IF;
 
+    IF p_action = 'RETURN' AND v_stage_code NOT IN ('PURCHASE_COMMITTEE', 'PRINCIPAL') THEN
+        RAISE EXCEPTION 'Only Purchase Committee and Principal can return a request for correction'
+            USING ERRCODE = 'SP005';
+    END IF;
+
+    IF p_action = 'RETURN' AND COALESCE(TRIM(p_comments), TRIM(p_rejection_reason), '') = '' THEN
+        RAISE EXCEPTION 'A return for correction requires a reason or comments'
+            USING ERRCODE = 'SP007';
+    END IF;
+
     IF p_action = 'PARTIAL_APPROVE'
        AND (p_item_decisions IS NULL OR jsonb_array_length(p_item_decisions) = 0) THEN
         RAISE EXCEPTION 'A partial approval must specify item decisions'
@@ -114,25 +137,39 @@ BEGIN
         RETURNING signature_id INTO v_signature_id;
     END IF;
 
-    -- Work out where the request lands. APPROVE / PARTIAL_APPROVE are left
-    -- NULL here and resolved from the item statuses further down.
+    -- Determine new stage and status
     IF p_action = 'REJECT' THEN
         v_new_status := 'REJECTED';
         v_new_stage  := v_req.current_stage_id;
 
-    ELSIF p_action = 'ESCALATE' THEN
-        v_next_stage := fn_next_stage(v_req.current_stage_id);
-        IF v_next_stage IS NULL THEN
-            RAISE EXCEPTION 'No stage exists above %', v_stage_code
-                USING ERRCODE = 'SP009';
-        END IF;
-        v_new_stage  := v_next_stage;
-        v_new_status := fn_stage_status(
-            (SELECT code FROM workflow_stages WHERE stage_id = v_next_stage));
+    ELSIF p_action = 'RETURN' THEN
+        v_new_status := 'AWAITING_RESUBMISSION';
+        v_new_stage  := v_req.current_stage_id;
 
-    ELSIF p_action IN ('COMMENT','RETURN') THEN
+    ELSIF p_action = 'COMMENT' THEN
         v_new_status := v_req.current_status;
         v_new_stage  := v_req.current_stage_id;
+
+    ELSIF v_stage_code = 'PURCHASE_COMMITTEE' AND p_action = 'ESCALATE' THEN
+        v_new_stage  := v_principal_stage_id;
+        v_new_status := 'UNDER_PRINCIPAL_REVIEW';
+
+    ELSIF v_stage_code = 'PRINCIPAL' AND p_action = 'ESCALATE' THEN
+        IF v_req.tentative_total_cost <= 500000 THEN
+            v_new_stage  := v_cdc_stage_id;
+            v_new_status := 'UNDER_CDC_REVIEW';
+        ELSE
+            v_new_stage  := v_final_stage_id;
+            v_new_status := 'UNDER_FINAL_AUTHORITY_REVIEW';
+        END IF;
+
+    ELSIF v_stage_code = 'CDC' AND p_action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE') THEN
+        v_new_stage  := v_cdc_stage_id;
+        v_new_status := 'UNDER_CDC_REVIEW';
+
+    ELSIF v_stage_code = 'FINAL_AUTHORITY' AND p_action IN ('APPROVE', 'PARTIAL_APPROVE') THEN
+        v_new_stage  := v_final_stage_id;
+        v_new_status := 'UNDER_FINAL_AUTHORITY_REVIEW';
 
     ELSE
         v_new_status := NULL;
@@ -149,17 +186,24 @@ BEGIN
         p_rejection_reason, p_comments, v_signature_id)
     RETURNING action_id INTO v_action_id;
 
-    -- ---- item-level decisions -------------------------------------------
+    IF p_action = 'RETURN' THEN
+        INSERT INTO correction_requests (
+            request_id, requested_by, requested_at_stage_id,
+            previous_status, reason, fields_to_correct
+        ) VALUES (
+            p_request_id, p_actor_id, v_req.current_stage_id,
+            v_req.current_status, COALESCE(p_comments, p_rejection_reason, 'Correction requested'),
+            '[]'::jsonb
+        );
+    END IF;
 
+    -- Item-level decisions
     IF p_item_decisions IS NOT NULL AND jsonb_array_length(p_item_decisions) > 0 THEN
-
         INSERT INTO approval_action_items (
             action_id, request_item_id, request_id,
             approved_quantity, approved_amount, item_decision, remarks)
         SELECT
-            v_action_id,
-            ri.request_item_id,
-            p_request_id,
+            v_action_id, ri.request_item_id, p_request_id,
             (d->>'approved_quantity')::NUMERIC,
             (d->>'approved_amount')::NUMERIC,
             (CASE
@@ -191,7 +235,6 @@ BEGIN
            AND aai.request_item_id = ri.request_item_id;
 
     ELSIF p_action = 'APPROVE' THEN
-        -- Approve everything as requested.
         INSERT INTO approval_action_items (
             action_id, request_item_id, request_id,
             approved_quantity, approved_amount, item_decision)
@@ -207,9 +250,73 @@ BEGIN
          WHERE request_id = p_request_id;
     END IF;
 
-    -- ---- resolve the request-level status --------------------------------
+    -- Evaluate multi-approver completion for CDC and Final Authority
+    IF v_stage_code = 'CDC' AND p_action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE') THEN
+        SELECT COUNT(DISTINCT sa.role_id) INTO v_cdc_count
+        FROM approval_actions aa
+        JOIN stage_approvers sa ON sa.user_id = aa.performed_by AND sa.stage_id = v_cdc_stage_id
+        JOIN roles r ON r.role_id = sa.role_id
+        WHERE aa.request_id = p_request_id
+          AND aa.stage_id = v_cdc_stage_id
+          AND aa.action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE')
+          AND r.code IN ('CDC_GRANT_MEMBER', 'CDC_NON_GRANT_MEMBER');
 
-    IF v_new_status IS NULL THEN
+        IF v_cdc_count >= 2 THEN
+            IF v_req.tentative_total_cost <= 500000 THEN
+                SELECT count(*),
+                       count(*) FILTER (WHERE item_status = 'APPROVED'),
+                       count(*) FILTER (WHERE item_status = 'REJECTED')
+                  INTO v_total, v_approved, v_rejected
+                FROM request_items WHERE request_id = p_request_id;
+
+                v_new_status := CASE
+                    WHEN v_total = 0 THEN 'APPROVED'
+                    WHEN v_rejected = v_total THEN 'REJECTED'
+                    WHEN v_approved = v_total THEN 'APPROVED'
+                    ELSE 'PARTIALLY_APPROVED'
+                END::request_status;
+                v_new_stage := v_cdc_stage_id;
+            ELSE
+                v_new_stage := v_final_stage_id;
+                v_new_status := 'UNDER_FINAL_AUTHORITY_REVIEW';
+            END IF;
+        ELSE
+            v_new_status := 'UNDER_CDC_REVIEW';
+            v_new_stage := v_cdc_stage_id;
+        END IF;
+        UPDATE approval_actions SET new_status = v_new_status WHERE action_id = v_action_id;
+
+    ELSIF v_stage_code = 'FINAL_AUTHORITY' AND p_action IN ('APPROVE', 'PARTIAL_APPROVE') THEN
+        SELECT COUNT(DISTINCT sa.role_id) INTO v_final_count
+        FROM approval_actions aa
+        JOIN stage_approvers sa ON sa.user_id = aa.performed_by AND sa.stage_id = v_final_stage_id
+        JOIN roles r ON r.role_id = sa.role_id
+        WHERE aa.request_id = p_request_id
+          AND aa.stage_id = v_final_stage_id
+          AND aa.action IN ('APPROVE', 'PARTIAL_APPROVE')
+          AND r.code IN ('CHAIRMAN', 'VICE_PRESIDENT');
+
+        IF v_final_count >= 2 THEN
+            SELECT count(*),
+                   count(*) FILTER (WHERE item_status = 'APPROVED'),
+                   count(*) FILTER (WHERE item_status = 'REJECTED')
+              INTO v_total, v_approved, v_rejected
+            FROM request_items WHERE request_id = p_request_id;
+
+            v_new_status := CASE
+                WHEN v_total = 0 THEN 'APPROVED'
+                WHEN v_rejected = v_total THEN 'REJECTED'
+                WHEN v_approved = v_total THEN 'APPROVED'
+                ELSE 'PARTIALLY_APPROVED'
+            END::request_status;
+            v_new_stage := v_final_stage_id;
+        ELSE
+            v_new_status := 'UNDER_FINAL_AUTHORITY_REVIEW';
+            v_new_stage := v_final_stage_id;
+        END IF;
+        UPDATE approval_actions SET new_status = v_new_status WHERE action_id = v_action_id;
+
+    ELSIF v_new_status IS NULL THEN
         SELECT count(*),
                count(*) FILTER (WHERE item_status = 'APPROVED'),
                count(*) FILTER (WHERE item_status = 'REJECTED')
@@ -229,13 +336,9 @@ BEGIN
     UPDATE requests
        SET current_status   = v_new_status,
            current_stage_id = v_new_stage,
-           closed_at        = CASE WHEN v_new_status = 'REJECTED' THEN NOW() ELSE closed_at END
+           closed_at        = CASE WHEN v_new_status IN ('REJECTED', 'APPROVED', 'PARTIALLY_APPROVED') THEN NOW() ELSE closed_at END
      WHERE request_id = p_request_id;
 
-    -- sanctioned_amount is maintained by trigger on request_items; copy the
-    -- settled figure onto the action so the timeline shows what was granted.
-    -- Only decisions that actually grant money carry an amount — an escalate
-    -- or a comment leaves it NULL rather than recording a misleading zero.
     IF p_action IN ('APPROVE', 'PARTIAL_APPROVE') THEN
         UPDATE approval_actions a
            SET amount_approved = r.sanctioned_amount

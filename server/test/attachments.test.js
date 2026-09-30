@@ -63,6 +63,12 @@ test('content is checked, not the name or the declared type', async () => {
   const svg = new FormData();
   svg.append('file', new Blob(['<svg onload="alert(1)"/>'], { type: 'image/svg+xml' }), 'logo.svg');
   expectStatus(await t.api('POST', `/api/requests/${requestId}/attachments`, { token: tok.head, form: svg }), 415);
+
+  const spoofedZip = new FormData();
+  // ZIP header PK\x03\x04 without OOXML word/ or xl/ structure, declared as DOCX.
+  const zipBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64, 0x00)]);
+  spoofedZip.append('file', new Blob([zipBytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'spoofed.docx');
+  expectStatus(await t.api('POST', `/api/requests/${requestId}/attachments`, { token: tok.head, form: spoofedZip }), 415);
 });
 
 test('oversized files are refused and leave nothing behind', async () => {
@@ -108,3 +114,42 @@ test('a missing stored file is reported, not crashed on', async () => {
   await fs.rm(path.join(process.env.UPLOAD_DIR, rows[0].storage_path));
   expectStatus(await t.api('GET', `/api/attachments/${attachmentId}`, { token: tok.head }), 410);
 });
+
+test('behavioral: attachment with storage_backend="local" downloads and deletes from local disk even when USE_DRIVE is true', async () => {
+  const headUser = (await t.superuser.query("SELECT user_id FROM users WHERE email = 'head.cs@spcollege.edu'")).rows[0].user_id;
+  const relPath = `2026/09/${crypto.randomUUID()}.pdf`;
+  const fullPath = path.join(process.env.UPLOAD_DIR || 'uploads', relPath);
+  const fileBytes = Buffer.from('%PDF-1.4 Legacy local disk attachment content');
+
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, fileBytes);
+
+  // Insert a draft request to attach to
+  const heads = expectStatus(await t.api('GET', '/api/budget-heads', { token: tok.head }), 200);
+  const lab = heads.find((h) => h.code === 'LAB').id;
+  const items = expectStatus(await t.api('GET', `/api/budget-heads/${lab}/items`, { token: tok.head }), 200);
+  const draftReq = expectStatus(await t.api('POST', '/api/requests', {
+    token: tok.head,
+    body: { title: 'Temp draft for backend test', budgetHeadId: lab,
+            items: [{ budgetItemId: items[0].id, quantity: 1, unitCost: 100 }] },
+  }), 201);
+
+  // Insert attachment row with storage_backend = 'local'
+  const { rows } = await t.superuser.query(
+    `INSERT INTO attachments (request_id, file_name, mime_type, size_bytes, storage_path, storage_backend, uploaded_by)
+     VALUES ($1, $2, $3, $4, $5, 'local', $6) RETURNING attachment_id`,
+    [draftReq.id, 'legacy_quote.pdf', 'application/pdf', fileBytes.length, relPath, headUser],
+  );
+  const testAttachmentId = rows[0].attachment_id;
+
+  // Download via GET /api/attachments/:id — must serve local bytes
+  const downloadRes = await t.api('GET', `/api/attachments/${testAttachmentId}`, { token: tok.head });
+  expectStatus(downloadRes, 200);
+  assert.ok(downloadRes.buffer.equals(fileBytes), 'Local file bytes served correctly');
+
+  // Delete via DELETE /api/attachments/:id — must remove local file from disk
+  expectStatus(await t.api('DELETE', `/api/attachments/${testAttachmentId}`, { token: tok.head }), 204);
+  const fileStillOnDisk = await fs.access(fullPath).then(() => true).catch(() => false);
+  assert.equal(fileStillOnDisk, false, 'Local file must be removed from disk upon deletion');
+});
+

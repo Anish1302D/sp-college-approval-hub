@@ -1,14 +1,72 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Scissors, Send, XCircle } from 'lucide-react';
+import { CheckCircle2, CornerUpLeft, Scissors, Send, XCircle } from 'lucide-react';
 import { api } from '../../api/client';
 import { money, quantity } from '../../api/format';
 import { useAction } from '../../hooks/useApi';
+import { parseCustomItem } from '../../utils/customItem';
 
+// Persistent (unselected) styles give approvers an immediate visual cue
+// of what each button does BEFORE they click. Selected styles are bolder.
 const CHOICES = {
-  APPROVE: { label: 'Approve', icon: CheckCircle2, tone: 'bg-emerald-600 hover:bg-emerald-700', done: 'Request approved' },
-  PARTIAL_APPROVE: { label: 'Partially approve', icon: Scissors, tone: 'bg-teal-600 hover:bg-teal-700', done: 'Partial approval recorded' },
-  REJECT: { label: 'Reject', icon: XCircle, tone: 'bg-red-600 hover:bg-red-700', done: 'Request rejected' },
-  ESCALATE: { label: 'Escalate', icon: Send, tone: 'bg-indigo-600 hover:bg-indigo-700', done: 'Escalated to the next authority' },
+  APPROVE: {
+    label: 'Approve',
+    icon: CheckCircle2,
+    // Unselected: soft green ghost; Selected: solid green
+    idle: 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300',
+    active: 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 shadow-emerald-200 shadow-md',
+    dot: 'bg-emerald-500',
+    done: 'Request approved',
+  },
+  PARTIAL_APPROVE: {
+    label: 'Partial approve',
+    icon: Scissors,
+    idle: 'bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 hover:border-teal-300',
+    active: 'bg-teal-600 hover:bg-teal-700 text-white border border-teal-600 shadow-teal-200 shadow-md',
+    dot: 'bg-teal-500',
+    done: 'Partial approval recorded',
+  },
+  REJECT: {
+    label: 'Reject',
+    icon: XCircle,
+    idle: 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 hover:border-red-300',
+    active: 'bg-red-600 hover:bg-red-700 text-white border border-red-600 shadow-red-200 shadow-md',
+    dot: 'bg-red-500',
+    done: 'Request rejected',
+  },
+  ESCALATE: {
+    label: 'Escalate',
+    icon: Send,
+    idle: 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300',
+    active: 'bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-600 shadow-indigo-200 shadow-md',
+    dot: 'bg-indigo-500',
+    done: 'Escalated to the next authority',
+  },
+  RETURN: {
+    label: 'Send back for correction',
+    icon: CornerUpLeft,
+    idle: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 hover:border-amber-300',
+    active: 'bg-amber-600 hover:bg-amber-700 text-white border border-amber-600 shadow-amber-200 shadow-md',
+    dot: 'bg-amber-500',
+    done: 'Sent back to the requester for correction',
+  },
+};
+
+// Where the request goes next, named rather than left as "escalate". The bands
+// are the Principal's: up to ₹50,000 they decide, then CDC, then the Chairman
+// and Vice Chairman (docs/plan/decisions.md).
+function escalateLabel(stageCode, amount) {
+  if (stageCode === 'PURCHASE_COMMITTEE') return 'Pass to Principal';
+  if (stageCode === 'PRINCIPAL') {
+    return amount <= 500000 ? 'Refer to CDC' : 'Refer to Chairman & Vice Chairman';
+  }
+  return 'Escalate';
+}
+
+const STAGE_NOTE = {
+  PURCHASE_COMMITTEE: 'The committee checks that the request is complete and properly documented. '
+    + 'It cannot approve the spending — passing it on sends it to the Principal, who decides.',
+  PRINCIPAL: 'Every request reaches you, whatever it costs. You decide up to ₹50,000; above that the '
+    + 'decision belongs to CDC, and above ₹5,00,000 to the Chairman and Vice Chairman.',
 };
 
 // Whole paise, so the preview total adds up the way the server's NUMERIC does.
@@ -40,17 +98,24 @@ export const DecisionPanel = ({ request }) => {
     ? request.items.reduce((sum, i) => sum + lineAmount(i), 0) / 100
     : null;
 
+  const label = (code) =>
+    (code === 'ESCALATE' ? escalateLabel(request.stage.code, Number(request.tentativeTotalCost)) : CHOICES[code].label);
+
   const problems = [];
   if (action === 'REJECT' && reason.trim().length < 3) problems.push('Give a reason for rejecting.');
+  if (action === 'RETURN' && comments.trim().length < 3) {
+    problems.push('Say what needs correcting — it is all the requester will see.');
+  }
   if (action === 'PARTIAL_APPROVE') {
     for (const i of request.items) {
+      const { displayName } = parseCustomItem(i.budgetItem, i.remarks);
       const qty = Number(lines[i.id].qty);
       if (lines[i.id].qty === '' || Number.isNaN(qty) || qty < 0 || qty > i.requestedQuantity) {
-        problems.push(`${i.budgetItem.name}: approve between 0 and ${quantity(i.requestedQuantity)}.`);
+        problems.push(`${displayName}: approve between 0 and ${quantity(i.requestedQuantity)}.`);
       } else if (lineAmount(i) > paise(i.estimatedTotal)) {
-        problems.push(`${i.budgetItem.name}: the amount can't exceed ${money(i.estimatedTotal)}.`);
+        problems.push(`${displayName}: the amount can't exceed ${money(i.estimatedTotal)}.`);
       } else if (qty === 0 && lineAmount(i) > 0) {
-        problems.push(`${i.budgetItem.name}: an item left out (quantity 0) can't carry an amount.`);
+        problems.push(`${displayName}: an item left out (quantity 0) can't carry an amount.`);
       }
     }
   }
@@ -75,14 +140,35 @@ export const DecisionPanel = ({ request }) => {
   const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400';
 
   return (
-    <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200 space-y-3">
+    <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200 space-y-4">
       <div>
         <h4 className="text-xs font-bold text-gray-900">Your decision — {request.stage.name}</h4>
-        <p className="text-[11px] text-gray-500">
-          {request.stage.isFinal ? 'This is the final stage; there is no further escalation.' : 'Escalating sends the request to the next authority.'}
+        <p className="text-[11px] text-gray-500 mt-0.5">
+          {STAGE_NOTE[request.stage.code]
+            ?? (request.stage.isFinal
+              ? 'This is the final stage; there is no further escalation.'
+              : 'Escalating sends the request to the next authority.')}
         </p>
+        {request.jointApprovals?.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {request.jointApprovals.map((a) => (
+              <span key={a.roleCode}
+                className={`px-2 py-1 rounded-lg text-[10px] font-semibold border ${
+                  a.decided
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-white text-gray-500 border-gray-200'
+                }`}>
+                {a.roleName}: {a.decided ? `recorded${a.by ? ` — ${a.by.name}` : ''}` : 'still to decide'}
+              </span>
+            ))}
+            <span className="text-[10px] text-gray-500 self-center">
+              Both are required; either may go first.
+            </span>
+          </div>
+        )}
       </div>
 
+      {/* Action picker — each button is persistently color-coded */}
       <div className="flex flex-wrap gap-2">
         {request.permissions.actions.map((code) => {
           const c = CHOICES[code];
@@ -93,9 +179,14 @@ export const DecisionPanel = ({ request }) => {
               key={code}
               onClick={() => setAction(selected ? null : code)}
               aria-pressed={selected}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${selected ? `${c.tone} text-white` : 'bg-white text-gray-700 border border-gray-200 hover:border-gray-300'}`}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all duration-150 ${
+                selected ? c.active : c.idle
+              }`}
             >
-              <Icon className="w-3.5 h-3.5" /> {c.label}
+              {/* Persistent color dot when unselected so meaning is clear */}
+              {!selected && <span className={`w-2 h-2 rounded-full ${c.dot} shrink-0`} />}
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              {label(code)}
             </button>
           );
         })}
@@ -113,21 +204,24 @@ export const DecisionPanel = ({ request }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {request.items.map((i) => (
-                <tr key={i.id}>
-                  <td className="py-2 px-3 font-semibold text-gray-800">{i.budgetItem.name}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-gray-500">{quantity(i.requestedQuantity)} × {money(i.unitCost)}</td>
-                  <td className="py-2 px-3 w-32">
-                    <input type="number" min="0" max={i.requestedQuantity} step="0.01" aria-label={`Approved quantity for ${i.budgetItem.name}`}
-                      className={inputCls} value={lines[i.id].qty} onChange={(e) => setLine(i.id, { qty: e.target.value })} />
-                  </td>
-                  <td className="py-2 px-3 w-40">
-                    <input type="number" min="0" step="0.01" aria-label={`Approved amount for ${i.budgetItem.name}`}
-                      placeholder={money(lineAmount(i) / 100)} className={inputCls}
-                      value={lines[i.id].amount} onChange={(e) => setLine(i.id, { amount: e.target.value })} />
-                  </td>
-                </tr>
-              ))}
+              {request.items.map((i) => {
+                const { displayName } = parseCustomItem(i.budgetItem, i.remarks);
+                return (
+                  <tr key={i.id}>
+                    <td className="py-2 px-3 font-semibold text-gray-800">{displayName}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-gray-500">{quantity(i.requestedQuantity)} × {money(i.unitCost)}</td>
+                    <td className="py-2 px-3 w-32">
+                      <input type="number" min="0" max={i.requestedQuantity} step="0.01" aria-label={`Approved quantity for ${displayName}`}
+                        className={inputCls} value={lines[i.id].qty} onChange={(e) => setLine(i.id, { qty: e.target.value })} />
+                    </td>
+                    <td className="py-2 px-3 w-40">
+                      <input type="number" min="0" step="0.01" aria-label={`Approved amount for ${displayName}`}
+                        placeholder={money(lineAmount(i) / 100)} className={inputCls}
+                        value={lines[i.id].amount} onChange={(e) => setLine(i.id, { amount: e.target.value })} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <p className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-100">
@@ -144,15 +238,19 @@ export const DecisionPanel = ({ request }) => {
 
       {action && (
         <>
-          <textarea rows={2} className={inputCls} placeholder="Remarks (optional)" value={comments} onChange={(e) => setComments(e.target.value)} />
+          <textarea rows={2} className={inputCls}
+            placeholder={action === 'RETURN'
+              ? 'What needs correcting? (required — this is what the requester is shown)'
+              : 'Remarks (optional)'}
+            value={comments} onChange={(e) => setComments(e.target.value)} />
           {problems.length > 0 && (
             <ul className="text-[11px] text-red-600 list-disc pl-4 space-y-0.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
           )}
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button onClick={() => setAction(null)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100">Cancel</button>
             <button onClick={submit} disabled={busy || problems.length > 0}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 ${CHOICES[action].tone}`}>
-              {busy ? 'Recording…' : `Confirm: ${CHOICES[action].label.toLowerCase()}`}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 ${CHOICES[action].active}`}>
+              {busy ? 'Recording…' : `Confirm: ${label(action).toLowerCase()}`}
             </button>
           </div>
           <p className="text-[10px] text-gray-400">Your decision is recorded with your name and sealed in the request's history.</p>

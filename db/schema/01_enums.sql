@@ -12,6 +12,7 @@ CREATE TYPE request_status AS ENUM (
     'UNDER_PRINCIPAL_REVIEW',
     'UNDER_CDC_REVIEW',
     'UNDER_FINAL_AUTHORITY_REVIEW',
+    'AWAITING_RESUBMISSION',
     'APPROVED',
     'PARTIALLY_APPROVED',
     'REJECTED',
@@ -37,6 +38,7 @@ CREATE TYPE approval_action_type AS ENUM (
     'ESCALATE',
     'FORWARD',
     'RETURN',
+    'RESUBMIT',
     'COMMENT',
     'CARRY_FORWARD',
     'CLOSE'
@@ -66,3 +68,7 @@ CREATE TYPE issue_status AS ENUM (
     'RESOLVED',
     'CLOSED'
 );
+
+-- Whether a course is government-aided. Grant and non-grant courses answer to
+-- different CDC members (docs/plan/decisions.md).
+CREATE TYPE course_funding_type AS ENUM ('GRANT', 'NON_GRANT');

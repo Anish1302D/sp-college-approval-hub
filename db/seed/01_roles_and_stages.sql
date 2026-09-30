@@ -24,10 +24,6 @@ INSERT INTO workflow_stages (code, name, sequence_no, is_final) VALUES
     ('FINAL_AUTHORITY',    'Chairman + VP',      4, TRUE)
 ON CONFLICT (code) DO NOTHING;
 
--- Amount-based routing rules. NULL max_amount = no upper bound.
+-- Amount-based routing rules. All requests enter at Purchase Committee for validity review.
 INSERT INTO stage_routing_rules (stage_id, min_amount, max_amount)
-SELECT stage_id, 0::NUMERIC,      50000::NUMERIC  FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE'
-UNION ALL
-SELECT stage_id, 50000::NUMERIC,  500000::NUMERIC FROM workflow_stages WHERE code = 'PRINCIPAL'
-UNION ALL
-SELECT stage_id, 500000::NUMERIC, NULL::NUMERIC   FROM workflow_stages WHERE code = 'CDC';
+SELECT stage_id, 0::NUMERIC, NULL::NUMERIC FROM workflow_stages WHERE code = 'PURCHASE_COMMITTEE';

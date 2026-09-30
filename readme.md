@@ -4,11 +4,17 @@ A working system for the college's procurement approvals and faculty issues:
 a PostgreSQL database that holds the workflow rules, a REST API over it, and a
 React interface.
 
-A request lists the items it needs. It enters the approval chain at the stage
-its amount belongs to, and each stage can approve it, approve part of it,
-reject it or send it higher — up to the Chairman and Vice President, whose
-decision is final. Nothing an approver does overwrites what was asked for, so
-requested, approved and unapproved figures all stay on the record.
+A request lists the items it needs. Every request, whatever its size, is first
+checked for completeness by the Purchase Committee and then seen by the
+Principal. Who decides the money depends on the amount: the Principal up to
+₹50,000, both CDC members up to ₹5 lakh, and the Chairman and Vice Chairman
+together above that. Any stage can approve part of a request, and the Purchase
+Committee or the Principal can send it back to the requester for correction.
+
+Nothing an approver does overwrites what was asked for: requested, approved and
+unapproved figures all stay on the record, a corrected request keeps its number
+and every earlier version, and a replaced document is superseded rather than
+deleted.
 
 ## Layout
 
@@ -59,16 +65,21 @@ college server**: it creates accounts that all share one password.
 ## Tests
 
 ```bash
-cd server && npm test                                    # 76 API tests
-psql -U postgres -d spc_approval -f db/tests/rls_app_user.sql   # 45 access checks
+cd server && npm test                                    # 133 API tests
+psql -U postgres -d spc_approval -f db/tests/rls_app_user.sql   # 52 access checks
 ```
 
 The access checks run as `app_user`, the same role the API uses. Running them
 as a superuser proves nothing — superusers bypass the rules being tested.
 
+`db/schema/` and `db/migrations/` must end at the same database. After changing
+either, prove it: build one from the schema files, replay the migrations over
+it, and compare (`db/migrations/README.md`).
+
 ## What is not built yet
 
-- **Email.** Notifications appear in the app; sending them is planned in
-  `docs/ApprovalHub_Mail_Plan.html`.
-- **Returning a request for correction**, and the fulfilment and closing steps.
+- **The fulfilment and closing steps** after a request is approved.
+- **Reports as true PDF or .docx files.** The report prints to PDF from the
+  browser and opens in Word; generating the binary formats server-side would
+  mean adding a rendering library.
 - **Deployment** to the college server.

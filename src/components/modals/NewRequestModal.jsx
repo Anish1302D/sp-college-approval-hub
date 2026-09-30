@@ -6,18 +6,41 @@ import { useApp } from '../../context/AppContext';
 import { useApi } from '../../hooks/useApi';
 import { ACCEPT } from '../ui/Attachments';
 import { Modal } from '../ui/Modal';
+import { serializeCustomItem } from '../../utils/customItem';
 
 // A plain counter for React keys. crypto.randomUUID() would be neater, but it
 // only exists on HTTPS or localhost pages, and an intranet server reached over
 // plain HTTP would crash this form on open.
 let nextKey = 0;
-const blankLine = () => ({ key: ++nextKey, budgetItemId: '', quantity: '', unitCost: '', remarks: '' });
+const blankLine = () => ({ key: ++nextKey, budgetItemId: '', quantity: '', unitCost: '', remarks: '', customItemName: '' });
 const blankForm = () => ({
   title: '', description: '', budgetHeadId: '', financialYearId: '', departmentId: '', courseId: '', urgency: 'Medium',
+  // "Other" free-text overrides
+  customBudgetHead: '',
+  customDepartment: '',
+  customCourse: '',
+  customUrgency: '',
 });
 
 // Whole paise, so the running total matches the server's exact NUMERIC maths.
 const linePaise = (l) => Math.round(Math.round(Number(l.quantity) * 100) * Math.round(Number(l.unitCost) * 100) / 100);
+
+// ---------------------------------------------------------------------------
+// Sentinel detection helpers
+// ---------------------------------------------------------------------------
+
+/** Returns true when a budget head/item's code is the sentinel "OTHER" row. */
+const isOther = (code) => code === 'OTHER';
+
+/** The "Other" head from the loaded list, if present. */
+const otherHead = (heads) => heads.find((h) => isOther(h.code));
+
+/** The "Other" item from the loaded catalogue for the selected head. */
+const otherItem = (catalogue) => catalogue.find((i) => isOther(i.code));
+
+// ---------------------------------------------------------------------------
+// Modal component
+// ---------------------------------------------------------------------------
 
 export const NewRequestModal = () => {
   const { modals, closeModal, showToast, refresh, openRecord } = useApp();
@@ -31,9 +54,9 @@ export const NewRequestModal = () => {
   const heads = useApi(open ? '/api/budget-heads' : null);
   const years = useApi(open ? '/api/financial-years' : null);
   const departments = useApi(open ? '/api/departments' : null);
-  const courses = useApi(open && form.departmentId ? `/api/courses${qs({ departmentId: form.departmentId })}` : null);
+  const courses = useApi(open && form.departmentId && form.departmentId !== 'OTHER' ? `/api/courses${qs({ departmentId: form.departmentId })}` : null);
   const stages = useApi(open ? '/api/workflow/stages' : null);
-  const catalogue = useApi(open && form.budgetHeadId ? `/api/budget-heads/${form.budgetHeadId}/items` : null);
+  const catalogue = useApi(open && form.budgetHeadId && form.budgetHeadId !== 'OTHER' ? `/api/budget-heads/${form.budgetHeadId}/items` : null);
 
   // Default the financial year to the active one.
   useEffect(() => {
@@ -46,10 +69,17 @@ export const NewRequestModal = () => {
 
   const changeHead = (budgetHeadId) => {
     // Items belong to a head; lines chosen under another head no longer apply.
-    set({ budgetHeadId });
-    setLines((ls) => ls.map((l) => ({ ...l, budgetItemId: '' })));
+    set({ budgetHeadId, customBudgetHead: '' });
+    setLines((ls) => ls.map((l) => ({ ...l, budgetItemId: '', customItemName: '' })));
   };
 
+  const changeDept = (departmentId) => {
+    set({ departmentId, courseId: '', customDepartment: '', customCourse: '' });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Determine which items are "filled" for total calculation
+  // ---------------------------------------------------------------------------
   const filled = lines.filter((l) => l.budgetItemId || l.quantity || l.unitCost);
   const totalPaise = filled.reduce((sum, l) => sum + (Number(l.quantity) > 0 && l.unitCost !== '' ? linePaise(l) : 0), 0);
   const total = totalPaise / 100;
@@ -58,28 +88,75 @@ export const NewRequestModal = () => {
     (s) => s.entryRange && total >= s.entryRange.min && (s.entryRange.maxExclusive === null || total < s.entryRange.maxExclusive),
   ), [stages.data, total]);
 
-  const itemById = new Map((catalogue.data ?? []).map((i) => [String(i.id), i]));
+  const catalogueItems = catalogue.data ?? [];
+  const itemById = new Map(catalogueItems.map((i) => [String(i.id), i]));
   const chosen = filled.map((l) => l.budgetItemId).filter(Boolean);
+
+  // ---------------------------------------------------------------------------
+  // Validation
+  // ---------------------------------------------------------------------------
+  const headIsOther = isOther((heads.data ?? []).find((h) => String(h.id) === form.budgetHeadId)?.code ?? '');
+  const deptIsOther = form.departmentId === 'OTHER';
+  const courseIsOther = form.courseId === 'OTHER';
+  const urgencyIsOther = form.urgency === 'OTHER';
 
   const problems = [];
   if (form.title.trim().length < 3) problems.push('Give the request a title (at least 3 characters).');
   if (!form.budgetHeadId) problems.push('Choose a budget head.');
+  if (headIsOther && !form.customBudgetHead.trim()) problems.push('Describe the budget head (the "Other" field is empty).');
+  if (deptIsOther && !form.customDepartment.trim()) problems.push('Describe the department (the "Other" field is empty).');
+  if (courseIsOther && !form.customCourse.trim()) problems.push('Describe the course (the "Other" field is empty).');
+  if (urgencyIsOther && !form.customUrgency.trim()) problems.push('Describe the urgency level (the "Other" field is empty).');
+
   filled.forEach((l, n) => {
-    const label = itemById.get(l.budgetItemId)?.name ?? `Line ${n + 1}`;
+    const item = itemById.get(l.budgetItemId);
+    const lineIsOther = isOther(item?.code ?? '');
+    const label = lineIsOther ? (l.customItemName.trim() || `Line ${n + 1}`) : (item?.name ?? `Line ${n + 1}`);
     if (!l.budgetItemId) problems.push(`Line ${n + 1}: choose an item.`);
+    if (lineIsOther && !l.customItemName.trim()) problems.push(`Line ${n + 1}: describe the item (the "Other" field is empty).`);
     if (!(Number(l.quantity) > 0)) problems.push(`${label}: quantity must be more than 0.`);
     if (l.unitCost === '' || Number(l.unitCost) < 0) problems.push(`${label}: enter a unit cost.`);
   });
   if (new Set(chosen).size !== chosen.length) problems.push('Each item can appear only once — change the quantity instead.');
   const submitProblems = [...problems, ...(filled.length === 0 ? ['Add at least one item to submit.'] : [])];
 
+  // ---------------------------------------------------------------------------
+  // Reset / close
+  // ---------------------------------------------------------------------------
   const reset = () => { setForm(blankForm()); setLines([blankLine()]); setFiles([]); setAttempted(null); };
   const close = () => { closeModal('newRequest'); reset(); };
 
+  // ---------------------------------------------------------------------------
+  // Save / submit
+  // ---------------------------------------------------------------------------
   const save = async (andSubmit) => {
     setAttempted(andSubmit ? 'submit' : 'draft');
     if ((andSubmit ? submitProblems : problems).length) return;
     setSaving(andSubmit ? 'submit' : 'draft');
+
+    // Build the extra JSONB payload with any "Other" custom names.
+    const urgencyValue = urgencyIsOther ? form.customUrgency.trim() : form.urgency;
+    const extra = { urgency: urgencyValue };
+    if (headIsOther && form.customBudgetHead.trim()) extra.customBudgetHead = form.customBudgetHead.trim();
+    if (deptIsOther && form.customDepartment.trim()) extra.customDepartment = form.customDepartment.trim();
+    if (courseIsOther && form.customCourse.trim()) extra.customCourse = form.customCourse.trim();
+
+    // For "Other" item lines: the custom name goes into remarks so it is
+    // visible everywhere downstream without a schema change.
+    const serialisedItems = filled.map((l) => {
+      const item = itemById.get(l.budgetItemId);
+      const lineIsOther = isOther(item?.code ?? '');
+      const remarks = lineIsOther
+        ? serializeCustomItem(l.customItemName, l.remarks)
+        : (l.remarks.trim() || undefined);
+      return {
+        budgetItemId: Number(l.budgetItemId),
+        quantity: Number(l.quantity),
+        unitCost: Number(l.unitCost),
+        ...(remarks ? { remarks } : {}),
+      };
+    });
+
     let created;
     try {
       created = await api('/api/requests', {
@@ -89,15 +166,11 @@ export const NewRequestModal = () => {
           description: form.description.trim() || undefined,
           budgetHeadId: Number(form.budgetHeadId),
           financialYearId: form.financialYearId ? Number(form.financialYearId) : undefined,
-          departmentId: form.departmentId ? Number(form.departmentId) : null,
-          courseId: form.courseId ? Number(form.courseId) : null,
-          extra: { urgency: form.urgency },
-          items: filled.map((l) => ({
-            budgetItemId: Number(l.budgetItemId),
-            quantity: Number(l.quantity),
-            unitCost: Number(l.unitCost),
-            ...(l.remarks.trim() ? { remarks: l.remarks.trim() } : {}),
-          })),
+          // When "Other" is selected on dept/course the FK is left null (they're nullable).
+          departmentId: (form.departmentId && !deptIsOther) ? Number(form.departmentId) : null,
+          courseId: (form.courseId && !courseIsOther) ? Number(form.courseId) : null,
+          extra,
+          items: serialisedItems,
         },
       });
     } catch (err) {
@@ -142,56 +215,102 @@ export const NewRequestModal = () => {
     openRecord('request', created.id);
   };
 
+  // ---------------------------------------------------------------------------
+  // Shared classes
+  // ---------------------------------------------------------------------------
   const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400';
   const labelCls = 'block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1.5';
-  const head = heads.data?.find((h) => String(h.id) === form.budgetHeadId);
+  const otherInputCls = `${inputCls} mt-1.5 border-amber-300 focus:border-amber-400 focus:ring-amber-400/20 bg-amber-50/30`;
 
+  const head = (heads.data ?? []).find((h) => String(h.id) === form.budgetHeadId);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <Modal isOpen={open} onClose={close} title="New procurement request" subtitle="List each item separately — approvers can approve some lines and cut others." maxWidth="max-w-4xl">
       <div className="space-y-5">
+        {/* Title */}
         <div>
           <label htmlFor="req-title" className={labelCls}>Title *</label>
           <input id="req-title" className={inputCls} placeholder="e.g. Seminar hall audio-visual upgrade"
             value={form.title} onChange={(e) => set({ title: e.target.value })} />
         </div>
 
+        {/* Budget head + Financial year + Urgency */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Budget Head */}
           <div>
             <label htmlFor="req-head" className={labelCls}>Budget head *</label>
             <select id="req-head" className={inputCls} value={form.budgetHeadId} onChange={(e) => changeHead(e.target.value)}>
               <option value="">Choose…</option>
-              {(heads.data ?? []).map((h) => <option key={h.id} value={h.id}>{h.name} — {h.headType.toLowerCase()}</option>)}
+              {(heads.data ?? []).filter((h) => !isOther(h.code)).map((h) => (
+                <option key={h.id} value={h.id}>{h.name} — {h.headType.toLowerCase()}</option>
+              ))}
+              <option value={String(otherHead(heads.data ?? [])?.id ?? 'OTHER')}>Other (specify below)</option>
             </select>
+            {headIsOther && (
+              <input className={otherInputCls} placeholder="Describe the budget head…"
+                value={form.customBudgetHead} onChange={(e) => set({ customBudgetHead: e.target.value })} />
+            )}
           </div>
+
+          {/* Financial year */}
           <div>
             <label htmlFor="req-fy" className={labelCls}>Financial year</label>
             <select id="req-fy" className={inputCls} value={form.financialYearId} onChange={(e) => set({ financialYearId: e.target.value })}>
               {(years.data ?? []).map((y) => <option key={y.id} value={y.id}>FY {y.label}{y.isActive ? ' (current)' : ''}</option>)}
             </select>
           </div>
+
+          {/* Urgency */}
           <div>
             <label htmlFor="req-urgency" className={labelCls}>Urgency</label>
             <select id="req-urgency" className={inputCls} value={form.urgency} onChange={(e) => set({ urgency: e.target.value })}>
-              <option>Low</option><option>Medium</option><option>High</option>
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+              <option value="OTHER">Other (specify below)</option>
             </select>
+            {urgencyIsOther && (
+              <input className={otherInputCls} placeholder="e.g. Critical — event in 48 hours"
+                value={form.customUrgency} onChange={(e) => set({ customUrgency: e.target.value })} />
+            )}
           </div>
         </div>
 
+        {/* Department + Course */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Department */}
           <div>
             <label htmlFor="req-dept" className={labelCls}>Department</label>
-            <select id="req-dept" className={inputCls} value={form.departmentId} onChange={(e) => set({ departmentId: e.target.value, courseId: '' })}>
+            <select id="req-dept" className={inputCls} value={form.departmentId} onChange={(e) => changeDept(e.target.value)}>
               <option value="">Not specific to a department</option>
               {(departments.data ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              <option value="OTHER">Other (specify below)</option>
             </select>
+            {deptIsOther && (
+              <input className={otherInputCls} placeholder="e.g. Sports & Physical Education"
+                value={form.customDepartment} onChange={(e) => set({ customDepartment: e.target.value })} />
+            )}
           </div>
+
+          {/* Course */}
           <div>
             <label htmlFor="req-course" className={labelCls}>Course</label>
-            <select id="req-course" className={inputCls} value={form.courseId} disabled={!form.departmentId || !(courses.data ?? []).length}
-              onChange={(e) => set({ courseId: e.target.value })}>
-              <option value="">{form.departmentId && !(courses.data ?? []).length ? 'No courses listed' : 'None'}</option>
+            <select id="req-course" className={inputCls} value={form.courseId}
+              disabled={!form.departmentId}
+              onChange={(e) => set({ courseId: e.target.value, customCourse: '' })}>
+              <option value="">
+                {!form.departmentId ? 'Select a department first' : 'None (not course-specific)'}
+              </option>
               {(courses.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {form.departmentId && <option value="OTHER">Other (specify below)</option>}
             </select>
+            {courseIsOther && (
+              <input className={otherInputCls} placeholder="e.g. B.Sc. Environmental Science"
+                value={form.customCourse} onChange={(e) => set({ customCourse: e.target.value })} />
+            )}
           </div>
         </div>
 
@@ -199,50 +318,74 @@ export const NewRequestModal = () => {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className={labelCls.replace('mb-1.5', '')}>Items *</span>
-            {head && <span className="text-[11px] text-gray-400">Items under {head.name}</span>}
+            {head && !headIsOther && <span className="text-[11px] text-gray-400">Items under {head.name}</span>}
           </div>
           <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 bg-white">
             {lines.map((l, n) => {
               const item = itemById.get(l.budgetItemId);
+              const lineIsOther = isOther(item?.code ?? '');
               return (
                 <div key={l.key} className="p-3 grid grid-cols-12 gap-2 items-end">
                   <label className="col-span-12 md:col-span-5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                     Item {n + 1}
-                    <select className={`${inputCls} mt-1`} value={l.budgetItemId} disabled={!form.budgetHeadId}
-                      onChange={(e) => setLine(l.key, { budgetItemId: e.target.value })}>
+                    <select className={`${inputCls} mt-1`} value={l.budgetItemId}
+                      disabled={!form.budgetHeadId}
+                      onChange={(e) => setLine(l.key, { budgetItemId: e.target.value, customItemName: '' })}>
                       <option value="">{form.budgetHeadId ? 'Choose…' : 'Choose a budget head first'}</option>
-                      {(catalogue.data ?? []).map((i) => (
+                      {catalogueItems.filter((i) => !isOther(i.code)).map((i) => (
                         <option key={i.id} value={i.id} disabled={chosen.includes(String(i.id)) && l.budgetItemId !== String(i.id)}>
                           {i.name} ({i.itemType.toLowerCase()})
                         </option>
                       ))}
+                      {/* "Other" option — rendered last */}
+                      {otherItem(catalogueItems) && (
+                        <option value={String(otherItem(catalogueItems).id)}>Other (specify below)</option>
+                      )}
                     </select>
+                    {/* Custom item name input revealed when "Other" selected */}
+                    {lineIsOther && (
+                      <input className={`${otherInputCls} text-xs`} placeholder="What item do you need?"
+                        value={l.customItemName} onChange={(e) => setLine(l.key, { customItemName: e.target.value })} />
+                    )}
                   </label>
+
                   <label className="col-span-4 md:col-span-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                    Qty{item?.unit ? ` (${item.unit})` : ''}
+                    Qty{item && !lineIsOther && item.unit ? ` (${item.unit})` : ''}
                     <input type="number" min="0.01" step="0.01" className={`${inputCls} mt-1`} value={l.quantity}
                       onChange={(e) => setLine(l.key, { quantity: e.target.value })} />
                   </label>
+
                   <label className="col-span-4 md:col-span-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                     Unit cost ₹
                     <input type="number" min="0" step="0.01" className={`${inputCls} mt-1`} value={l.unitCost}
                       onChange={(e) => setLine(l.key, { unitCost: e.target.value })} />
                   </label>
+
                   <div className="col-span-3 md:col-span-2 text-right text-sm font-bold text-gray-900 tabular-nums pb-2">
                     {Number(l.quantity) > 0 && l.unitCost !== '' ? money(linePaise(l) / 100) : '—'}
                   </div>
+
                   <div className="col-span-1 text-right pb-1.5">
                     {lines.length > 1 && (
                       <button onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} aria-label={`Remove item ${n + 1}`}
                         className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
                     )}
                   </div>
-                  <input className={`${inputCls} col-span-12 text-xs py-1.5`} placeholder="Specification or note for this item (optional)"
-                    value={l.remarks} onChange={(e) => setLine(l.key, { remarks: e.target.value })} />
+
+                  {/* Remarks — hidden label for "Other" lines since custom name is above */}
+                  {!lineIsOther && (
+                    <input className={`${inputCls} col-span-12 text-xs py-1.5`} placeholder="Specification or note for this item (optional)"
+                      value={l.remarks} onChange={(e) => setLine(l.key, { remarks: e.target.value })} />
+                  )}
+                  {lineIsOther && (
+                    <input className={`${inputCls} col-span-12 text-xs py-1.5`} placeholder="Additional specification or note (optional)"
+                      value={l.remarks} onChange={(e) => setLine(l.key, { remarks: e.target.value })} />
+                  )}
                 </div>
               );
             })}
           </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <button onClick={() => setLines((ls) => [...ls, blankLine()])} disabled={!form.budgetHeadId}
               className="text-xs font-semibold text-indigo-600 flex items-center gap-1 hover:underline disabled:opacity-40">
@@ -261,12 +404,14 @@ export const NewRequestModal = () => {
           )}
         </div>
 
+        {/* Justification */}
         <div>
           <label htmlFor="req-desc" className={labelCls}>Justification</label>
           <textarea id="req-desc" rows={3} className={inputCls} placeholder="Why these items are needed, and anything approvers should know."
             value={form.description} onChange={(e) => set({ description: e.target.value })} />
         </div>
 
+        {/* Attachments */}
         <div>
           <span className={labelCls}>Quotations and supporting documents</span>
           <div className="flex flex-wrap items-center gap-2">
@@ -285,12 +430,14 @@ export const NewRequestModal = () => {
           </div>
         </div>
 
+        {/* Validation errors */}
         {attempted && (attempted === 'submit' ? submitProblems : problems).length > 0 && (
           <ul className="text-xs text-red-600 list-disc pl-5 space-y-0.5">
             {(attempted === 'submit' ? submitProblems : problems).map((p) => <li key={p}>{p}</li>)}
           </ul>
         )}
 
+        {/* Actions */}
         <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-gray-100">
           <button type="button" onClick={close} className="px-4 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-100">Cancel</button>
           <button type="button" onClick={() => save(false)} disabled={Boolean(saving)}

@@ -198,3 +198,217 @@ of email in the filestructure as well. Deploy it so that it will work on the dep
 - **Environment variables & sanitization:** Added `.trim()` parsing to credential
   and email environment variables in `config.js` to safeguard against trailing newlines.
 - **Verified and deployed:** Tested both locally and on the deployed Render service.
+
+## 2026-09-27
+
+### Prompt
+
+Multi-step improvement plan on the `revisit` branch:
+1. Admin User Management panel (no SQL needed to provision accounts)
+2. "Other" option with free-text on all dropdowns in NewRequestModal
+3. Fix Courses (seed data gap)
+4. DecisionPanel color-coded actions
+5. UI/UX pass across all screens
+6. Per-role feature review
+
+### Step 1 Work Completed — Admin User Management
+
+- **New backend router** `server/src/routes/admin.js`: six endpoints, all gated behind `requireRole('ADMIN')`.
+  - `GET  /api/admin/users` — list all users with their roles (joined from `user_roles`)
+  - `GET  /api/admin/roles` — list all available roles from the `roles` table
+  - `POST /api/admin/users` — create user (email, full name, password, role IDs, active flag)
+  - `PATCH /api/admin/users/:id` — edit any field including password and roles
+  - `DELETE /api/admin/users/:id` — soft-deactivate (`is_active = false`), preserves all audit history
+  - `POST /api/admin/users/:id/reactivate` — re-enable a deactivated account
+- **Security**: passwords hashed with bcrypt (cost 12) *before* the DB transaction opens (CPU-bound work outside the pool connection). Admin cannot deactivate their own account.
+- **Mounted** in `server/src/app.js` at `/api/admin`.
+- **New page** `src/pages/UserManagement.jsx`: searchable user table with color-coded role pills, add/edit/deactivate/reactivate actions, and a shared create/edit modal with role multi-select checkboxes, password field, and active toggle.
+- **Sidebar** updated: "User management" added to the Admin portal under Operations.
+- **App.jsx** updated: import and register `user-management` page in PAGES map.
+- Committed and pushed to `revisit` branch.
+
+### Step 2 Work Completed — "Other" option on all dropdowns
+
+**Approach (no schema change):**
+- `department_id` and `course_id` are already nullable FKs — when "Other" is selected, they are left null and the typed name is stored in `extra.customDepartment` / `extra.customCourse`.
+- `urgency` is already in `extra.urgency` — the typed string is saved directly.
+- `budget_head_id` is a required FK — a sentinel `OTHER` row is inserted into `budget_heads`. Custom name stored in `extra.customBudgetHead`.
+- Per-line budget items use sentinel `OTHER` rows (one per budget head). Custom item name stored as `[Custom item: <name>]` prefix in the `remarks` field of `request_items`.
+
+**Migration** `db/migrations/20260927T120000_other_sentinel_items.sql`:
+- Inserts `budget_heads (code='OTHER')` and `budget_items (code='OTHER')` under every head. Fully idempotent via `ON CONFLICT DO NOTHING`.
+
+**Frontend changes:**
+- `NewRequestModal.jsx` — rewritten to detect sentinel selection and reveal an amber-tinted free-text input beneath each affected dropdown. Validation enforces that "Other" fields are not left blank before submission. Items formatted as `[Custom item: ...]` in remarks for the API.
+- `ItemsTable.jsx` — added `parseCustomItem()` helper that strips the `[Custom item: ...]` prefix from remarks and displays it as the proper item name. Downstream (approval screens, history) shows the user-typed name everywhere.
+- `RequestDetailModal.jsx` — subtitle and department/course tiles now read `extra.custom*` values and append `(other)` label for clarity.
+
+
+### Step 3 Work Completed - Fix Courses + Master Data Management
+
+- Migration 20260927T121500_seed_courses.sql: inserted 11 courses across 4 departments (CS, CHEM, PHY, ADMIN). Idempotent.
+- Admin API: GET/POST/PATCH/DELETE /api/admin/departments and /api/admin/courses added to admin.js
+- New page MasterDataManagement.jsx: accordion list of departments with courses, inline CRUD, changes immediately visible in NewRequestModal.
+- Wired into admin sidebar and App.jsx.
+
+### Step 4 Work Completed - DecisionPanel persistent color coding
+
+- DecisionPanel.jsx rewritten. All 4 action buttons are persistently color-coded before selection: Approve=green, Partial=teal, Reject=red, Escalate=indigo. Small colored dot as semantic cue on unselected state. On selection: full solid color with shadow. Confirm button matches action color.
+
+### Step 5 Work Completed - UI/UX pass
+
+- Profile.jsx rewritten: color-coded role badges, self-service password change accordion (calls POST /api/auth/change-password), gradient avatar, improved hierarchy.
+- POST /api/auth/change-password added to auth.js: verifies current password, hashes new password (bcrypt cost 12), returns 204.
+- SettingsPreferences.jsx rewritten: visual flow diagram with color-coded stage cards, connector arrows, amount thresholds, amber info callout.
+- ReviewQueue.jsx improved: live count badge from /api/dashboard, better spacing.
+- DecisionsArchive.jsx improved: visual legend (Approve/Partial/Reject/CarriedForward icons), empty-state hint.
+- Decision toasts: useAction() already wires CHOICES[action].done toast on every decision confirm.
+
+### Fix: PDF Attachments vanish on Render (Google Drive storage backend)
+
+**Root cause confirmed:** Render's ephemeral filesystem wipes the container's writable layer on every restart/redeploy. Uploaded files were written to a local `uploads/` folder, DB row was inserted (201 success), but the physical file was gone after any restart. Principal downloads returned 410 Gone.
+
+**What was NOT broken:** Multer field name (`file` matches on both sides), file size limits (10MB), PDF magic-byte detection, canAttach permission gate for HEAD role, RLS attachments_insert policy.
+
+**Fix - Google Drive backend:**
+- `server/src/storage.js` rewritten: when `GDRIVE_CREDENTIALS` + `GDRIVE_FOLDER_ID` env vars are both set, all file I/O goes to Google Drive via a Service Account (`googleapis` npm package). When absent, falls back to local disk for development.
+- `saveFile(buffer, ext)` uploads buffer to Drive, stores the Drive file ID as `storage_path` in DB.
+- `streamFromDrive(fileId, res, fileName, mimeType)` pipes the file from Drive directly to the Express response.
+- `server/src/routes/attachments.js`: download handler checks `USE_DRIVE` flag; uses `streamFromDrive` on Drive, `res.download` on local disk.
+- `server/src/config.js`: added optional `gDriveCredentials` and `gDriveFolderId` config fields.
+- `server/.env.example`: documented both new vars with generation commands.
+- `docs/GOOGLE_DRIVE_SETUP.md`: 7-step guide (Cloud project, Drive API, Service Account, folder share, base64 encode, Render env vars, verify).
+- Also fixed secondary bug: `detectType()` now byte-sniffs if declared MIME is wrong (e.g. `application/octet-stream` PDFs from some browsers).
+
+## 2026-09-27 (Phase 2 Schema Implementation & Code Review Refinements)
+
+### Prompt
+
+Implement Phase 2 multi-step requirement (Sub-steps A through D) per `docs/plan/decisions.md` and `docs/plan/phase1-gap-analysis.md`, followed by addressing three code-review feedback issues:
+1. Amount-based routing & two-member CDC model (Sub-step 2A)
+2. Resubmission & request versioning schema (Sub-step 2B)
+3. Document versioning & attachment superseding (Sub-step 2C)
+4. Departmental annual budget provisions with computed balances (Sub-step 2D)
+5. Address 3 code review feedback issues:
+   - Dynamic credentials check in `reset-test-db.js` (skip `ALTER ROLE app_user` if existing password connects).
+   - Strict container inspection for ZIP files (reject unrecognized/spoofed ZIP files with 415).
+   - Custom item display name rendering in `DecisionPanel.jsx` and `RequestDetailModal.jsx`.
+
+### Work Completed
+
+- **Sub-step 2A — Amount-Based Routing & 2-Member CDC Model**:
+  - `₹0 – ₹50,000`: Principal direct authority.
+  - `₹50,000 – ₹5,00,000`: CDC authority (2 members required: `CDC_MEMBER_1`, `CDC_MEMBER_2`).
+  - `> ₹5,00,000`: Joint Chairman + Vice Chairman authority.
+  - Purchase Committee updated to non-deciding validity review stage.
+  - Created migration `20260927T211500_amount_routing_and_cdc_joint.sql`.
+
+- **Sub-step 2B — Resubmission & Versioning**:
+  - Original `request_id` maintained on resubmission while incrementing `version_number`.
+  - Enforced `RETURN` action permissions strictly to Purchase Committee and Principal roles.
+  - Gated `fn_resubmit_request` to the original requester (`raised_by`).
+  - Added cryptographic digital signature/seal generation for `RESUBMIT` actions for complete audit trail integrity.
+  - Created migration `20260927T220000_resubmission_and_versioning.sql`.
+
+- **Sub-step 2C — Document Versioning & Attachment Linking**:
+  - Added `fn_supersede_attachment` to track file versioning (`superseded_by_id`, `version_number`).
+  - Operates across both `local` and `drive` storage backends.
+  - Created migration `20260927T230000_document_versioning.sql`.
+
+- **Sub-step 2D — Departmental Annual Budget Provisions**:
+  - Added `department_budget_provisions` table with attached supporting documents and RLS policies restricted by department.
+  - Added views to compute `utilized_amount`, `committed_amount`, and `remaining_amount` dynamically from actual request records.
+  - Created migration `20260927T240000_budget_provision.sql`.
+
+- **Code Review Fixes**:
+  - **Issue 1**: Updated `server/scripts/reset-test-db.js` with `getAppUserCredentials()` and `canUserAuthenticate()` check to skip `ALTER ROLE app_user` when existing credentials connect successfully. Added test in `server/test/auth.test.js`.
+  - **Issue 2**: Updated `detectType` in `server/src/storage.js` to return `null` immediately when `inspectZipContainer` returns `null` for a ZIP file, preventing spoofed ZIP uploads. Added test in `server/test/attachments.test.js` verifying 415 rejection.
+  - **Issue 3**: Replaced direct `budgetItem.name` rendering in `DecisionPanel.jsx` and `RequestDetailModal.jsx` with `parseCustomItem(item.budgetItem, item.remarks).displayName`. Confirmed no frontend testing framework exists for `src/` in `package.json`.
+
+- **Git Commit & Push**:
+  - Committed and pushed all Phase 2 migrations, schema updates, summaries, and code-review fixes to GitHub branch `revisit`.
+
+## 2026-09-29 (Phases 3-7: workflow completion, resubmission repair, reporting, security sweep)
+
+### Prompt
+
+Work on the `revisit` branch. Read `prompts.md` and the plan documents, finish
+the resubmission work and the remaining phases, review the code, and leave the
+email-sending code alone. Do not commit or push.
+
+### What was actually wrong
+
+Phases 1-3 were reported complete, but three things were broken in ways the
+test suite was hiding:
+
+1. **Resubmission could never work on a deployed database.**
+   `db/schema/13_record_action.sql` held a corrected `fn_record_action` in which
+   `RETURN` sets `AWAITING_RESUBMISSION` and writes a `correction_requests` row.
+   The migration that shipped it (`20260927T211500`) carried an older copy where
+   `RETURN` behaved like `COMMENT`. A database built from `db/schema/` was right;
+   one built by applying migrations - the college server - was not, so
+   `fn_resubmit_request` would have raised SP018 forever. The migration path had
+   silently drifted from the schema path.
+2. **`fn_supersede_attachment` had no authorisation check at all.** It is
+   `SECURITY DEFINER`, so RLS does not protect what it touches, and neither it
+   nor its route checked anything: any signed-in user could replace the
+   quotation on any request in the college, including a decided one.
+3. **Carry-forward was impossible for anything that had reached CDC or the
+   Chairman.** The stage-progression trigger fired on insert, and the
+   carried-forward copy inherits its stage but has no history, so the Principal
+   decision it demanded could never exist. The test that would have caught it
+   was already failing for another reason.
+
+### Work completed
+
+- **Migration `20260929T120000`** restates `fn_record_action`,
+  `fn_resubmit_request` (now with the `p_signature_hash` parameter, dropping the
+  three-argument overload first) and `fn_enforce_stage_progression` verbatim
+  from `db/schema/`, and carries the carry-forward fix. The two build paths are
+  now compared directly - build from schema, replay migrations, diff every
+  function definition - and agree.
+- **Migration `20260929T130000`** adds `courses.funding_type` (Grant /
+  Non-Grant), with the API and master-data screen to set it.
+- **Authorisation**: `fn_supersede_attachment` given the checks the RLS policies
+  would have made; `POST /api/budget-provisions` given the role check that was
+  a `TODO`; SP016/SP017/SP018 mapped so they stop surfacing as 500s.
+- **`permissions.actions`** computed per stage and amount band instead of a
+  fixed list, with the same rules repeated in the route handler.
+- **Resubmission end to end**: editing allowed while a request is out for
+  correction, the correction reason carried on the request detail, the action
+  sealed like every other, and a requester-facing panel
+  (`RequestEditPanel.jsx`, replacing `DraftPanel.jsx`) that shows what was
+  asked for and resubmits under the same request number.
+- **Interface**: send-back-for-correction with a required reason; escalate
+  named after its destination; per-stage notes; both signatures shown at CDC and
+  the board; document version history with replace-not-delete; a budget context
+  panel during review; a departmental budgets page; corrections list; report
+  buttons.
+- **Reporting module** (`server/src/reporting.js`): sections A-H assembled from
+  the same rows the workflow writes, nine stage reports as views of that one
+  assembly, printable to PDF and openable in Word, access inherited from the
+  request itself. No rendering dependency was added - see
+  `docs/plan/phase5-reporting-notes.md` for why that decision is left open.
+- **Tests**: 76 -> 133, with the 20 old-workflow failures rewritten rather than
+  deleted, and new coverage for resubmission, the two-role stages, the report,
+  and the supersede bypass. The 52 RLS checks still pass.
+- **Docs**: `phase3-api-notes.md`, `phase3-security-review.md`,
+  `phase4-frontend-notes.md`, `phase5-reporting-notes.md`,
+  `phase6-security-report.md`; `requirement.md` and `readme.md` rewritten to the
+  workflow as it now behaves.
+- **Verified in the browser**: raised a request as a head, returned it as the
+  Purchase Committee, corrected and resubmitted it as the head, and rendered
+  its report. Three defects were found this way that the tests did not catch -
+  the raw `AWAITING_RESUBMISSION` status label, the requester being attributed
+  to the stage their request sat in, and a report unreadable in a dark-themed
+  browser.
+
+### Left open, deliberately
+
+Whether the Purchase Committee may reject outright; what happens when two joint
+approvers disagree; the fate of the legacy `CDC_MEMBER` role; whether a
+carried-forward request should restart at the committee. All four are recorded
+as open questions in `requirement.md` - they change the workflow and need the
+Principal's answer rather than a guess.
+
+Email sending was not touched, by instruction.

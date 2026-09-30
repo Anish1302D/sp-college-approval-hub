@@ -8,11 +8,18 @@ CREATE TABLE roles (
     description  TEXT
 );
 
+CREATE TABLE departments (
+    department_id SERIAL PRIMARY KEY,
+    code          TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL
+);
+
 CREATE TABLE users (
     user_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email          CITEXT NOT NULL UNIQUE,
     full_name      TEXT NOT NULL,
     password_hash  TEXT NOT NULL,
+    department_id  INTEGER REFERENCES departments(department_id) ON DELETE SET NULL,
     is_active      BOOLEAN NOT NULL DEFAULT TRUE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -25,17 +32,14 @@ CREATE TABLE user_roles (
     PRIMARY KEY (user_id, role_id)
 );
 
-CREATE TABLE departments (
-    department_id SERIAL PRIMARY KEY,
-    code          TEXT NOT NULL UNIQUE,
-    name          TEXT NOT NULL
-);
-
 CREATE TABLE courses (
     course_id      SERIAL PRIMARY KEY,
     department_id  INTEGER NOT NULL REFERENCES departments(department_id) ON DELETE RESTRICT,
     code           TEXT NOT NULL,
     name           TEXT NOT NULL,
+    -- Whether the course is government-aided. It decides which side of CDC a
+    -- request belongs to, so it is recorded on the course itself.
+    funding_type   course_funding_type NOT NULL DEFAULT 'GRANT',
     UNIQUE (department_id, code)
 );
 

@@ -1,7 +1,8 @@
 import React from 'react';
 import {
-  AlertCircle, BarChart3, BellRing, Box, ClipboardCheck, FileDown, FileText, FolderArchive,
-  GraduationCap, History, LayoutDashboard, LogOut, Receipt, Settings, ShieldAlert, UserCircle,
+  AlertCircle, BarChart3, BellRing, BookOpen, Box, ClipboardCheck, FileDown, FileText, FolderArchive,
+  GraduationCap, History, LayoutDashboard, LogOut, Receipt, Settings, ShieldAlert,
+  UserCircle, Users, Wallet,
 } from 'lucide-react';
 import { initials, roleLabel } from '../../api/format';
 import { useApp } from '../../context/AppContext';
@@ -19,6 +20,7 @@ export const NAV = {
       { id: 'non-financial-requests', label: 'Faculty issues', icon: AlertCircle, badge: 'issues' },
     ] },
     { title: 'College', items: [
+      { id: 'budget-provisions', label: 'Departmental budgets', icon: Wallet },
       { id: 'inventory', label: 'Inventory', icon: Box },
       { id: 'reports', label: 'Reports', icon: BarChart3 },
       { id: 'exports', label: 'Exports', icon: FileDown },
@@ -32,6 +34,7 @@ export const NAV = {
       { id: 'requests-all', label: 'All I can see', icon: FileText },
     ] },
     { title: 'College', items: [
+      { id: 'budget-provisions', label: 'Departmental budgets', icon: Wallet },
       { id: 'reports', label: 'Reports', icon: BarChart3 },
     ] },
   ],
@@ -39,11 +42,15 @@ export const NAV = {
     { title: 'My work', items: [
       { id: 'faculty-dashboard', label: 'Dashboard', icon: GraduationCap },
       { id: 'faculty-requests', label: 'My requests & issues', icon: FileText },
+      { id: 'budget-provisions', label: 'Department budget', icon: Wallet },
     ] },
   ],
   admin: [
     { title: 'Operations', items: [
       { id: 'admin-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'user-management', label: 'User management', icon: Users },
+      { id: 'master-data', label: 'Departments & courses', icon: BookOpen },
+      { id: 'budget-provisions', label: 'Departmental budgets', icon: Wallet },
       { id: 'requests-all', label: 'All requests', icon: FileText },
       { id: 'non-financial-requests', label: 'Faculty issues', icon: AlertCircle, badge: 'issues' },
       { id: 'inventory', label: 'Inventory', icon: Box },

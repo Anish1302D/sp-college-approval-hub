@@ -24,6 +24,37 @@ const NOT_CARRYABLE = ['REJECTED', 'CLOSED', 'FULFILLED', 'CARRIED_FORWARD'];
 const ATTACH_CLOSED = ['CLOSED', 'CARRIED_FORWARD'];
 const isUnderReview = (status) => status.startsWith('UNDER_');
 
+// The bands the Principal's authority turns on (docs/plan/decisions.md):
+// up to ₹50,000 the Principal decides, above it the decision belongs to CDC
+// or — past ₹5,00,000 — to the Chairman and Vice Chairman jointly.
+const PRINCIPAL_DECIDES_UPTO = 50000;
+
+// Where a requester may still change the request: a draft nobody has seen, or
+// one an approver has sent back for correction.
+const EDITABLE_STATUSES = ['DRAFT', 'AWAITING_RESUBMISSION'];
+
+/**
+ * What an approver staffed at `stageCode` may do with a request of this size.
+ * Mirrors fn_record_action's stage restrictions so the UI never offers a
+ * button the database will refuse. The database remains the authority.
+ */
+function actionsAt(stageCode, isFinalStage, amount) {
+  if (stageCode === 'PURCHASE_COMMITTEE') {
+    // Validity review only — never a decision on the money.
+    return ['ESCALATE', 'RETURN', 'REJECT'];
+  }
+  if (stageCode === 'PRINCIPAL') {
+    return amount <= PRINCIPAL_DECIDES_UPTO
+      ? ['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'RETURN']
+      : ['ESCALATE', 'REJECT', 'RETURN'];
+  }
+  // CDC and the Chairman/Vice Chairman decide, and there is nowhere above them
+  // to send a request: the Principal already chose which of the two holds the
+  // decision, from the amount. Only the committee and the Principal may return
+  // a request for correction.
+  return ['APPROVE', 'PARTIAL_APPROVE', 'REJECT'];
+}
+
 // ---------------------------------------------------------------------------
 // Email notifications (fire-and-forget)
 // ---------------------------------------------------------------------------
@@ -62,14 +93,25 @@ async function resolvePrincipal() {
  * Resolve the approvers staffed at a particular workflow stage.
  * @returns {Array<{ email: string, name: string }>}
  */
-async function resolveStageApprovers(stageId) {
-  if (!stageId) return [];
+async function resolveCdcApprovers() {
   try {
     const { rows } = await pool.query(
       `SELECT u.full_name, u.email FROM stage_approvers sa
          JOIN users u ON u.user_id = sa.user_id
-        WHERE sa.stage_id = $1 AND u.is_active`,
-      [stageId],
+         JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+        WHERE ws.code = 'CDC' AND u.is_active`,
+    );
+    return rows.map((r) => ({ email: r.email, name: r.full_name }));
+  } catch { return []; }
+}
+
+async function resolveFinalApprovers() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.full_name, u.email FROM stage_approvers sa
+         JOIN users u ON u.user_id = sa.user_id
+         JOIN workflow_stages ws ON ws.stage_id = sa.stage_id
+        WHERE ws.code = 'FINAL_AUTHORITY' AND u.is_active`,
     );
     return rows.map((r) => ({ email: r.email, name: r.full_name }));
   } catch { return []; }
@@ -100,9 +142,6 @@ function notifyRequestAsync({ request, actorId, action, comments, rejectionReaso
       const now = new Date();
 
       if (action === 'SUBMITTED') {
-        // ─── New submission → notify the principal (configured email) ───
-        // Stage approvers may have placeholder emails from seeding, so we
-        // always use the configured principalEmail for reliable delivery.
         const emailData = buildRequestStatusEmail({
           request: { ...request, requesterEmail: requester?.email },
           recipientEmail: principal.email,
@@ -125,54 +164,105 @@ function notifyRequestAsync({ request, actorId, action, comments, rejectionReaso
         });
 
         await sendMail(emailData);
-      } else if (['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'ESCALATE'].includes(action)) {
-        // ─── Decision → notify the requester ───
+      } else if (['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'ESCALATE', 'FORWARD', 'RETURN', 'RESUBMIT'].includes(action)) {
         const typeMap = {
           APPROVE: 'APPROVAL',
           PARTIAL_APPROVE: 'PARTIAL APPROVAL',
           REJECT: 'REJECTION',
           ESCALATE: 'ESCALATION',
+          FORWARD: 'ESCALATION',
+          RETURN: 'CORRECTION REQUESTED',
+          RESUBMIT: 'RESUBMITTED',
         };
         const actionMap = {
           APPROVE: 'Request Fully Approved',
           PARTIAL_APPROVE: 'Request Partially Approved',
           REJECT: 'Request Rejected',
           ESCALATE: 'Request Escalated to Next Stage',
+          FORWARD: 'Request Forwarded to Next Stage',
+          RETURN: 'Request Sent Back for Correction',
+          RESUBMIT: 'Request Resubmitted by Requester',
         };
         const descriptionMap = {
           APPROVE: `Your financial request "${request.title}" has been fully approved by ${actor.full_name}.`,
-          PARTIAL_APPROVE: `Your financial request "${request.title}" has been partially approved by ${actor.full_name}. Some items may have adjusted quantities or amounts.`,
+          PARTIAL_APPROVE: `Your financial request "${request.title}" has been partially approved by ${actor.full_name}.`,
           REJECT: `Your financial request "${request.title}" has been rejected by ${actor.full_name}.`,
           ESCALATE: `Your financial request "${request.title}" has been escalated to the next review stage by ${actor.full_name}.`,
-        };
-        const actionRequiredMap = {
-          APPROVE: 'No further action is required from you. The approved items will proceed to fulfilment.',
-          PARTIAL_APPROVE: 'Please review the approved quantities and amounts. Unapproved items may be revised and resubmitted.',
-          REJECT: 'Please review the rejection reason. You may revise and resubmit the request if needed.',
-          ESCALATE: 'Your request has been escalated for higher-level review. No action is required from you at this time.',
+          FORWARD: `Your financial request "${request.title}" has been forwarded to the next review stage by ${actor.full_name}.`,
+          RETURN: `Your financial request "${request.title}" has been returned for correction by ${actor.full_name}.`,
+          RESUBMIT: `Financial request "${request.title}" has been resubmitted by ${actor.full_name}.`,
         };
 
-        const nextStageLabel = STAGE_LABELS[request.status] || request.stage?.name || '—';
+        // Notify BOTH CDC members on entering CDC stage
+        if (request.status === 'UNDER_CDC_REVIEW') {
+          const cdcApprovers = await resolveCdcApprovers();
+          for (const cdcMember of cdcApprovers) {
+            const emailData = buildRequestStatusEmail({
+              request: { ...request, requesterEmail: requester?.email },
+              recipientEmail: cdcMember.email,
+              recipientName: cdcMember.name,
+              notificationType: 'CDC REVIEW REQUIRED',
+              emailAction: 'Request Awaiting CDC Approval',
+              eventDescription: `Financial request "${request.title}" requires joint CDC review.`,
+              decision: 'PENDING REVIEW',
+              approverName: actor.full_name,
+              approverRole: 'Principal',
+              decisionDate: now,
+              actionRequired: 'Please review and record your CDC decision.',
+              ctaText: 'Review Request',
+              workflowStage: 'CDC Review',
+              nextStage: 'CDC Review',
+              pendingSince: now,
+              pendingDays: 0,
+            });
+            await sendMail(emailData);
+          }
+        }
 
-        // All seeded users have placeholder emails (e.g. head.cs@spcollege.edu).
-        // Always send to the configured principalEmail for reliable delivery.
+        // Notify BOTH Chairman and VP on entering Final Authority stage
+        if (request.status === 'UNDER_FINAL_AUTHORITY_REVIEW') {
+          const finalApprovers = await resolveFinalApprovers();
+          for (const finalMember of finalApprovers) {
+            const emailData = buildRequestStatusEmail({
+              request: { ...request, requesterEmail: requester?.email },
+              recipientEmail: finalMember.email,
+              recipientName: finalMember.name,
+              notificationType: 'FINAL AUTHORITY REVIEW REQUIRED',
+              emailAction: 'Request Awaiting Final Approval',
+              eventDescription: `Financial request "${request.title}" requires joint Chairman/VP review.`,
+              decision: 'PENDING REVIEW',
+              approverName: actor.full_name,
+              approverRole: 'Approver',
+              decisionDate: now,
+              actionRequired: 'Please review and record your final authority decision.',
+              ctaText: 'Review Request',
+              workflowStage: 'Final Authority Review',
+              nextStage: 'Final Authority Review',
+              pendingSince: now,
+              pendingDays: 0,
+            });
+            await sendMail(emailData);
+          }
+        }
+
+        // Notify requester / principal
         const emailData = buildRequestStatusEmail({
           request: { ...request, requesterEmail: requester?.email },
           recipientEmail: principal.email,
           recipientName: requester?.full_name || principal.name,
-          notificationType: typeMap[action],
-          emailAction: actionMap[action],
-          eventDescription: descriptionMap[action],
-          decision: typeMap[action],
+          notificationType: typeMap[action] || 'NOTIFICATION',
+          emailAction: actionMap[action] || 'Request Updated',
+          eventDescription: descriptionMap[action] || `Request status updated.`,
+          decision: typeMap[action] || 'UPDATED',
           approverName: actor.full_name,
           approverRole: request.stage?.name || 'Approver',
           decisionDate: now,
           approvalRemarks: comments || null,
           rejectionReason: rejectionReason || null,
-          actionRequired: actionRequiredMap[action],
+          actionRequired: action === 'RETURN' ? 'Please revise the request and resubmit.' : 'No action required.',
           ctaText: 'View Request',
           workflowStage: request.stage?.name || request.status,
-          nextStage: action === 'ESCALATE' ? nextStageLabel : (request.status === 'APPROVED' ? 'Fulfilment' : '—'),
+          nextStage: request.status,
           pendingSince: request.submittedAt || request.createdAt,
           pendingDays: Math.floor((now - new Date(request.submittedAt || request.createdAt)) / 86400000),
         });
@@ -227,6 +317,12 @@ const attachmentRow = (r) => ({
   fileName: r.file_name,
   mimeType: r.mime_type,
   sizeBytes: r.size_bytes,
+  // A replaced document is kept, not deleted: supersededById points at what
+  // replaced it, so the detail view can show the whole chain.
+  versionNumber: r.version_number ?? 1,
+  supersededById: r.superseded_by_id ?? null,
+  requestVersionNumber: r.request_version_number ?? 1,
+  replacementReason: r.replacement_reason ?? null,
   uploadedBy: { id: r.uploaded_by, name: r.uploaded_by_name },
   uploadedAt: r.uploaded_at,
 });
@@ -234,6 +330,52 @@ const attachmentRow = (r) => ({
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
+
+// Stages two people decide together, and the two roles that must each record a
+// decision before the request moves on (docs/plan/decisions.md). Order matters
+// only for display; either may act first.
+const JOINT_STAGE_ROLES = {
+  CDC: ['CDC_GRANT_MEMBER', 'CDC_NON_GRANT_MEMBER'],
+  FINAL_AUTHORITY: ['CHAIRMAN', 'VICE_PRESIDENT'],
+};
+
+/**
+ * Who has and has not yet decided at a two-person stage, so the UI can show
+ * "CDC Grant Member approved, CDC Non-Grant Member pending" rather than one
+ * anonymous "CDC" step. Empty for every other stage.
+ */
+async function loadJointApprovals(db, requestId, stageCode, stageId) {
+  const roleCodes = JOINT_STAGE_ROLES[stageCode];
+  if (!roleCodes) return [];
+  const { rows } = await db.query(
+    `SELECT ro.code AS role_code, ro.name AS role_name,
+            act.performed_by, act.action, act.created_at, u.full_name AS performed_by_name
+       FROM roles ro
+       LEFT JOIN LATERAL (
+         SELECT aa.performed_by, aa.action, aa.created_at
+           FROM approval_actions aa
+           JOIN stage_approvers sa ON sa.user_id = aa.performed_by
+                                  AND sa.stage_id = aa.stage_id
+                                  AND sa.role_id = ro.role_id
+          WHERE aa.request_id = $1 AND aa.stage_id = $2
+            AND aa.action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE')
+          ORDER BY aa.created_at DESC
+          LIMIT 1
+       ) act ON TRUE
+       LEFT JOIN users u ON u.user_id = act.performed_by
+      WHERE ro.code = ANY($3::text[])
+      ORDER BY array_position($3::text[], ro.code::text)`,
+    [requestId, stageId, roleCodes],
+  );
+  return rows.map((row) => ({
+    roleCode: row.role_code,
+    roleName: row.role_name,
+    decided: row.performed_by !== null,
+    action: row.action,
+    by: row.performed_by ? { id: row.performed_by, name: row.performed_by_name } : null,
+    at: row.created_at,
+  }));
+}
 
 /** Full request as the caller may see it, or null when RLS hides it. */
 export async function loadDetail(db, requestId, user) {
@@ -260,19 +402,25 @@ export async function loadDetail(db, requestId, user) {
   const r = rows[0];
   if (!r) return null;
 
-  const [items, attachments] = await queryAll(db, [
+  const [items, attachments, corrections] = await queryAll(db, [
     [`SELECT ri.*, bi.code, bi.name, bi.unit
         FROM request_items ri JOIN budget_items bi ON bi.budget_item_id = ri.budget_item_id
        WHERE ri.request_id = $1 ORDER BY bi.name, ri.request_item_id`, [requestId]],
     [`SELECT a.*, u.full_name AS uploaded_by_name
         FROM attachments a JOIN users u ON u.user_id = a.uploaded_by
-       WHERE a.request_id = $1 ORDER BY a.uploaded_at`, [requestId]],
+       WHERE a.request_id = $1 ORDER BY a.version_number, a.uploaded_at`, [requestId]],
+    [`SELECT cr.*, u.full_name AS requested_by_name, ws.name AS stage_name
+        FROM correction_requests cr
+        JOIN users u ON u.user_id = cr.requested_by
+        LEFT JOIN workflow_stages ws ON ws.stage_id = cr.requested_at_stage_id
+       WHERE cr.request_id = $1 ORDER BY cr.created_at DESC`, [requestId]],
   ]);
 
   const isOwner = r.raised_by === user.id;
   const isAdmin = user.roles.includes('ADMIN');
-  const canEdit = r.current_status === 'DRAFT' && (isOwner || isAdmin);
+  const canEdit = EDITABLE_STATUSES.includes(r.current_status) && (isOwner || isAdmin);
   const canAct = r.staffed_here && isUnderReview(r.current_status);
+  const jointApprovals = await loadJointApprovals(db, requestId, r.stage_code, r.current_stage_id);
 
   return {
     id: r.request_id,
@@ -297,6 +445,20 @@ export async function loadDetail(db, requestId, user) {
       : null,
     items: items.rows.map(itemRow),
     attachments: attachments.rows.map(attachmentRow),
+    jointApprovals,
+    versionNumber: r.current_version_number,
+    // Newest first, so [0] is the correction the requester is answering while
+    // the request is AWAITING_RESUBMISSION.
+    corrections: corrections.rows.map((c) => ({
+      id: c.correction_id,
+      reason: c.reason,
+      requestedBy: { id: c.requested_by, name: c.requested_by_name },
+      stageName: c.stage_name,
+      previousStatus: c.previous_status,
+      createdAt: c.created_at,
+      resolvedAt: c.resolved_at,
+      resolvedByVersion: c.resolved_by_version,
+    })),
     createdAt: r.created_at,
     submittedAt: r.submitted_at,
     updatedAt: r.updated_at,
@@ -304,11 +466,10 @@ export async function loadDetail(db, requestId, user) {
     // What the UI may offer. Every one is enforced again when attempted.
     permissions: {
       canEdit,
-      canSubmit: canEdit && items.rowCount > 0,
+      canSubmit: canEdit && r.current_status === 'DRAFT' && items.rowCount > 0,
+      canResubmit: isOwner && r.current_status === 'AWAITING_RESUBMISSION' && items.rowCount > 0,
       canAct,
-      actions: canAct
-        ? ['APPROVE', 'PARTIAL_APPROVE', 'REJECT', ...(r.stage_is_final ? [] : ['ESCALATE'])]
-        : [],
+      actions: canAct ? actionsAt(r.stage_code, r.stage_is_final, Number(r.tentative_total_cost)) : [],
       canAttach: !ATTACH_CLOSED.includes(r.current_status) && (isOwner || isAdmin || r.staffed_here),
       canCarryForward: (isOwner || isAdmin) && !NOT_CARRYABLE.includes(r.current_status),
     },
@@ -321,8 +482,13 @@ async function requireDetail(db, requestId, user) {
   return detail;
 }
 
-/** A draft the caller may change, locked for the rest of the transaction. */
-async function lockEditableDraft(db, requestId, user) {
+/**
+ * A request the caller may change, locked for the rest of the transaction.
+ * Drafts always qualify; a request sent back for correction does too, because
+ * correcting it is the whole point of the resubmission flow. Callers that only
+ * ever make sense on an unsubmitted draft (deleting one) pass `['DRAFT']`.
+ */
+async function lockEditableRequest(db, requestId, user, statuses = EDITABLE_STATUSES) {
   const { rows } = await db.query(
     'SELECT request_id, raised_by, current_status, budget_head_id FROM requests WHERE request_id = $1',
     [requestId],
@@ -332,8 +498,10 @@ async function lockEditableDraft(db, requestId, user) {
   if (r.raised_by !== user.id && !user.roles.includes('ADMIN')) {
     throw forbidden('Only the person who raised this request can change it');
   }
-  if (r.current_status !== 'DRAFT') {
-    throw conflict('Only draft requests can be changed; this one has been submitted');
+  if (!statuses.includes(r.current_status)) {
+    throw conflict(statuses.length === 1
+      ? 'Only draft requests can be deleted; this one has been submitted'
+      : 'This request can only be changed while it is a draft or has been sent back for correction');
   }
   await db.query('SELECT 1 FROM requests WHERE request_id = $1 FOR UPDATE', [requestId]);
   return r;
@@ -521,7 +689,7 @@ requestsRouter.patch('/:id', async (req, res) => {
   const body = updateSchema.parse(req.body);
 
   const detail = await withUser(req.user.id, async (db) => {
-    const current = await lockEditableDraft(db, requestId, req.user);
+    const current = await lockEditableRequest(db, requestId, req.user);
 
     if (body.budgetHeadId !== undefined && body.budgetHeadId !== current.budget_head_id) {
       const { rows } = await db.query(
@@ -556,7 +724,7 @@ requestsRouter.patch('/:id', async (req, res) => {
 requestsRouter.delete('/:id', async (req, res) => {
   const requestId = param(req, 'id');
   const files = await withUser(req.user.id, async (db) => {
-    await lockEditableDraft(db, requestId, req.user);
+    await lockEditableRequest(db, requestId, req.user, ['DRAFT']);
     const { rows } = await db.query(
       'SELECT storage_path FROM attachments WHERE request_id = $1', [requestId]);
     await db.query('DELETE FROM requests WHERE request_id = $1', [requestId]);
@@ -577,7 +745,7 @@ requestsRouter.post('/:id/items', async (req, res) => {
   const item = itemInput.parse(req.body);
 
   const detail = await withUser(req.user.id, async (db) => {
-    const current = await lockEditableDraft(db, requestId, req.user);
+    const current = await lockEditableRequest(db, requestId, req.user);
     const { rows } = await db.query(
       'SELECT budget_item_id FROM request_items WHERE request_id = $1', [requestId]);
     await checkItems(db, current.budget_head_id, [item.budgetItemId], rows.map((r) => r.budget_item_id));
@@ -600,7 +768,7 @@ requestsRouter.patch('/:id/items/:itemId', async (req, res) => {
   const body = itemUpdate.parse(req.body);
 
   const detail = await withUser(req.user.id, async (db) => {
-    await lockEditableDraft(db, requestId, req.user);
+    await lockEditableRequest(db, requestId, req.user);
     const { rowCount } = await db.query(
       `UPDATE request_items
           SET requested_quantity  = COALESCE($3, requested_quantity),
@@ -625,7 +793,7 @@ requestsRouter.delete('/:id/items/:itemId', async (req, res) => {
   const itemId = param(req, 'itemId');
 
   const detail = await withUser(req.user.id, async (db) => {
-    await lockEditableDraft(db, requestId, req.user);
+    await lockEditableRequest(db, requestId, req.user);
     const { rowCount } = await db.query(
       'DELETE FROM request_items WHERE request_item_id = $2 AND request_id = $1', [requestId, itemId]);
     if (!rowCount) throw notFound('Item not found on this request');
@@ -644,7 +812,7 @@ requestsRouter.post('/:id/submit', async (req, res) => {
   const requestId = param(req, 'id');
 
   const detail = await withUser(req.user.id, async (db) => {
-    await lockEditableDraft(db, requestId, req.user);
+    await lockEditableRequest(db, requestId, req.user, ['DRAFT']);
     const { rows } = await db.query(
       'SELECT count(*)::int AS n FROM request_items WHERE request_id = $1', [requestId]);
     if (rows[0].n === 0) throw unprocessable('Add at least one item before submitting');
@@ -676,6 +844,11 @@ const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('REJECT'), comments: note,
              rejectionReason: z.string().trim().min(3).max(2000) }),
   z.object({ action: z.literal('ESCALATE'), comments: note }),
+  z.object({ action: z.literal('FORWARD'), comments: note }),
+  // A return has to say what needs correcting — it is the only thing the
+  // requester is shown when the request comes back to them.
+  z.object({ action: z.literal('RETURN'),
+             comments: z.string().trim().min(3).max(2000) }),
 ]);
 
 /**
@@ -758,23 +931,60 @@ requestsRouter.post('/:id/actions', async (req, res) => {
   const requestId = param(req, 'id');
   const body = actionSchema.parse(req.body);
 
+  const dbAction = body.action === 'FORWARD' ? 'ESCALATE' : body.action;
+
   const result = await withUser(req.user.id, async (db) => {
-    const visible = await db.query('SELECT 1 FROM requests WHERE request_id = $1', [requestId]);
-    if (!visible.rowCount) throw notFound('Request not found');
+    const { rows: stageRows } = await db.query(
+      `SELECT r.current_stage_id, ws.code AS stage_code, r.tentative_total_cost,
+              EXISTS (SELECT 1 FROM stage_approvers sa
+                       WHERE sa.stage_id = r.current_stage_id AND sa.user_id = $2) AS staffed_here
+         FROM requests r
+         LEFT JOIN workflow_stages ws ON ws.stage_id = r.current_stage_id
+        WHERE r.request_id = $1`,
+      [requestId, req.user.id],
+    );
+    if (!stageRows[0]) throw notFound('Request not found');
+    const stageCode = stageRows[0].stage_code;
+    const amount = Number(stageRows[0].tentative_total_cost);
+
+    // Defence in depth. fn_record_action refuses each of these too; repeating
+    // them here turns a database exception into a clear refusal, and keeps the
+    // rule visible to anyone reading the route. Skipped for a caller who is not
+    // staffed at this stage, so that "you cannot act here" stays the reason
+    // they are refused rather than a rule about someone else's stage.
+    if (stageRows[0].staffed_here) {
+      if (stageCode === 'PURCHASE_COMMITTEE' && ['APPROVE', 'PARTIAL_APPROVE'].includes(dbAction)) {
+        throw unprocessable('Purchase Committee performs validity review only and cannot approve requests');
+      }
+      if (stageCode === 'PRINCIPAL' && ['APPROVE', 'PARTIAL_APPROVE'].includes(dbAction)
+          && amount > PRINCIPAL_DECIDES_UPTO) {
+        throw unprocessable(
+          'Requests above ₹50,000 are decided by CDC or the Chairman and Vice Chairman; forward it instead');
+      }
+      if (dbAction === 'RETURN' && !['PURCHASE_COMMITTEE', 'PRINCIPAL'].includes(stageCode)) {
+        throw unprocessable('Only the Purchase Committee and the Principal can return a request for correction');
+      }
+      // The Principal referred the request to whoever the amount says decides
+      // it, so CDC has nowhere to pass it: above ₹5,00,000 it would never have
+      // reached them. Left to fn_record_action, two escalations at CDC close
+      // the request as partially approved with nothing actually approved.
+      // (The final authority's own refusal is the database's, as SP006.)
+      if (dbAction === 'ESCALATE' && stageCode === 'CDC') {
+        throw unprocessable('CDC holds the decision at this amount; it cannot pass the request further up');
+      }
+    }
 
     const decisions = await buildDecisions(db, requestId, body);
-    const rejectionReason = body.action === 'REJECT' ? body.rejectionReason : null;
+    const rejectionReason = dbAction === 'REJECT' ? (body.rejectionReason || null) : null;
     const signature = seal({
-      requestId, action: body.action, actorId: req.user.id,
+      requestId, action: dbAction, actorId: req.user.id,
       decisions, comments: body.comments, rejectionReason,
     });
 
-    // Authority, the stage transition, item updates, the sanctioned total and
-    // the audit entry all happen inside this one call, atomically.
     const { rows } = await db.query(
       'SELECT fn_record_action($1, $2, $3, $4, $5, $6, $7) AS action_id',
       [
-        requestId, req.user.id, body.action,
+        requestId, req.user.id, dbAction,
         decisions.length
           ? JSON.stringify(decisions.map((d) => ({
             request_item_id: d.requestItemId,
@@ -793,12 +1003,68 @@ requestsRouter.post('/:id/actions', async (req, res) => {
   notifyRequestAsync({
     request: result.request,
     actorId: req.user.id,
-    action: body.action,
+    action: dbAction,
     comments: body.comments,
-    rejectionReason: body.action === 'REJECT' ? body.rejectionReason : null,
+    rejectionReason: dbAction === 'REJECT' ? body.rejectionReason : null,
   });
 
   res.status(201).json(result);
+});
+
+requestsRouter.post('/:id/resubmit', async (req, res) => {
+  const requestId = param(req, 'id');
+  const body = z.object({ comments: note }).parse(req.body || {});
+
+  // fn_resubmit_request refuses anyone but the requester, and refuses a
+  // request that was not returned for correction.
+  const detail = await withUser(req.user.id, async (db) => {
+    const signature = seal({
+      requestId, action: 'RESUBMIT', actorId: req.user.id, decisions: [], comments: body.comments,
+    });
+    const { rows } = await db.query(
+      'SELECT fn_resubmit_request($1, $2, $3, $4) AS new_version',
+      [requestId, req.user.id, body.comments || null, signature],
+    );
+    if (!rows[0]) throw notFound('Request not found or resubmission failed');
+    return requireDetail(db, requestId, req.user);
+  });
+
+  notifyRequestAsync({ request: detail, actorId: req.user.id, action: 'RESUBMIT', comments: body.comments });
+
+  res.json(detail);
+});
+
+requestsRouter.get('/:id/budget-context', async (req, res) => {
+  const requestId = param(req, 'id');
+
+  // No role list: the request lookup below runs under the caller's RLS, so
+  // anyone who cannot see the request gets a 404 before any budget figure is
+  // read, and the figures returned are only for that request's own department.
+  const ctx = await withUser(req.user.id, async (db) => {
+    const { rows: reqRows } = await db.query(
+      'SELECT department_id, financial_year_id, budget_head_id FROM requests WHERE request_id = $1',
+      [requestId],
+    );
+    if (!reqRows[0]) throw notFound('Request not found');
+    const r = reqRows[0];
+    if (!r.department_id) return null;
+    const { rows } = await db.query(
+      'SELECT * FROM fn_get_department_budget_context($1, $2, $3)',
+      [r.department_id, r.financial_year_id, r.budget_head_id],
+    );
+    const b = rows[0];
+    if (!b) return null;
+    return {
+      budgetProvisionId: b.budget_provision_id,
+      allocatedAmount: Number(b.allocated_amount),
+      utilizedAmount: Number(b.utilized_amount),
+      committedAmount: Number(b.committed_amount),
+      remainingAmount: Number(b.remaining_amount),
+      availableAmount: Number(b.available_amount),
+    };
+  });
+
+  res.json(ctx);
 });
 
 requestsRouter.get('/:id/timeline', async (req, res) => {

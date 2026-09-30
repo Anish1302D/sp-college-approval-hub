@@ -16,25 +16,43 @@ Roles are data, not code: adding a CDC member is a row, not a release.
 
 | Role | Does |
 |---|---|
-| Head of Department, Activity In-charge | Raise requests; follow their own |
-| Purchase Committee | Decide requests under ₹50,000 |
-| Principal | Decide ₹50,000 to under ₹5 lakh; read all college data; manage faculty issues |
-| CDC (Grant and Non-Grant members) | Decide requests of ₹5 lakh and above |
-| Chairman, Vice President | Final authority; no further escalation |
+| Head of Department, Activity In-charge | Raise requests; follow their own; correct and resubmit ones sent back; declare the department's annual budget provision |
+| Purchase Committee | Check every request for completeness; pass it to the Principal or send it back for correction. Never decides the spending |
+| Principal | Sees every request whatever its size; decides up to ₹50,000; refers larger ones on; read all college data; manage faculty issues |
+| CDC (Grant and Non-Grant members) | Decide ₹50,000 to ₹5 lakh — **both** must record a decision |
+| Chairman, Vice President | Decide above ₹5 lakh jointly — **both** must record a decision; no further escalation |
 | Administrator | Inventory, purchase bills, exports, audit log |
 | Anyone signed in | Raise and follow faculty issues |
 
 ## Approval workflow
 
-A request enters at the stage its total belongs to, and each stage may
-**approve**, **partly approve**, **reject** or **escalate** — except the final
-authority, which cannot escalate.
+Every request, whatever its size, takes the same first two steps: the Purchase
+Committee checks it is complete, then the Principal sees it. Who decides the
+money depends on the amount.
 
-| Request total | Enters at |
-|---|---|
-| Under ₹50,000 | Purchase Committee |
-| ₹50,000 to under ₹5 lakh | Principal |
-| ₹5 lakh and above | CDC |
+```
+Requester → Purchase Committee (completeness) → Principal (always)
+                                                   ├─ up to ₹50,000 ....... Principal decides
+                                                   ├─ ₹50,000 – ₹5,00,000 .. CDC Grant + CDC Non-Grant
+                                                   └─ above ₹5,00,000 ...... Chairman + Vice Chairman
+```
+
+- **The Purchase Committee cannot approve.** It confirms the quotation and
+  supporting papers are there and passes the request to the Principal, or sends
+  it back to the requester for correction.
+- **The Principal is never skipped.** Nothing reaches CDC or the Chairman
+  without a Principal decision in its history; the database refuses it.
+- **Two signatures where two are required.** At CDC and at the Chairman/Vice
+  Chairman stage both members must each record a decision, in either order, and
+  each is a row of its own. One signature leaves the request where it is.
+- **Sending back for correction** belongs to the Purchase Committee and the
+  Principal. The request returns to the requester under the same request
+  number, keeps every earlier version, and comes back to the stage that sent it
+  back.
+
+The ₹50,000 and ₹5,00,000 thresholds are authoritative
+(`docs/plan/decisions.md`); the ₹1,50,000 / ₹15,00,000 figures that appear in
+some earlier documents are a documentation error.
 
 ## Functional requirements
 
@@ -48,7 +66,19 @@ authority, which cannot escalate.
   when, and against which items, and is sealed so later alteration is detectable.
 - **Comments carry a visibility**: everyone on the request, up the chain, or one
   stage only. A restricted CDC note reaches the Principal but not the requester.
-- Attachments (quotations, bills, photographs) on requests and issues.
+- Attachments (quotations, bills, photographs) on requests and issues. Past the
+  draft a document is **replaced rather than removed**: every version stays,
+  numbered, with who replaced it and why.
+- **Correction and resubmission.** A request sent back keeps its request number
+  and gains a new version; the earlier version's fields, items and documents all
+  remain on record, and no approver can move it while it is with the requester.
+- **Departmental budget provision** for the year, declared by the head of the
+  department with its sanction letter attached. What has been sanctioned and
+  what is committed are computed from the requests themselves, never typed in,
+  and are shown to whoever is reviewing a request.
+- A **formal report** per request — request, items, budget, documents, the
+  workflow as a narrative, resubmissions, audit trail, and the route the
+  request actually took — printable to PDF and openable in Word.
 - Unfinished requests **carry forward** to a later financial year, keeping the
   original request, its history and its signatures.
 - Faculty issues: free text, deliberately lightweight, routed to the Principal,
@@ -78,17 +108,19 @@ Implemented: the database (`db/`), the REST API (`server/`), and the interface
 
 Not yet built:
 
-- **Email delivery.** Notifications appear in the application; sending them is
-  planned in `docs/ApprovalHub_Mail_Plan.html`.
-- **Returning a request for correction**, and the fulfilment and closing steps.
+- **The fulfilment and closing steps** after a request is approved.
 - **Deployment** to the college server.
 
 ## Open questions
 
-1. When a stage approves, is the request finished, or passed up to the next
-   stage? The email specification implies the latter; the system does the former.
-2. Must both the Chairman and the Vice President approve, or does either decide?
+1. May the Purchase Committee **reject** a request outright? It cannot approve
+   one, and the Principal is meant to see every request — which a rejection at
+   the committee would prevent. The code currently allows it.
+2. What happens when the two members of a joint stage **disagree**, or when one
+   of them rejects? Neither `decisions.md` nor the requirements say, and the
+   code currently lets the second decision overwrite the first's item figures.
 3. Does `budget_heads.head_type` replace `budget_items.item_type`, or sit
    alongside it?
-4. How is a request's Head of Department identified? Users are not linked to
-   departments, which blocks the Head's copy on email notifications.
+4. Should a request that is **carried forward** resume at the stage it left off
+   at, as it does now, or start again from the Purchase Committee in the new
+   financial year?

@@ -10,3 +10,10 @@ server/uploads/
 
 # Local private credentials files
 *PRIVATE*
+
+# Temporary scratch scripts
+scratch/
+
+# IDE / agent settings
+.claude/
+

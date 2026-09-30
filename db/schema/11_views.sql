@@ -56,7 +56,8 @@ SELECT
         'UNDER_PURCHASE_COMMITTEE_REVIEW',
         'UNDER_PRINCIPAL_REVIEW',
         'UNDER_CDC_REVIEW',
-        'UNDER_FINAL_AUTHORITY_REVIEW'
+        'UNDER_FINAL_AUTHORITY_REVIEW',
+        'AWAITING_RESUBMISSION'
     ))                                                                AS pending,
     COUNT(*) FILTER (WHERE r.current_status IN ('FULFILMENT_PENDING','FULFILLED')) AS fulfilment,
     COUNT(*) FILTER (WHERE r.current_status = 'CARRIED_FORWARD')      AS carried_forward
@@ -103,3 +104,41 @@ SELECT
     SUM(ri.approved_amount)  AS total_approved_amount
 FROM request_items ri
 GROUP BY ri.request_id;
+
+-- Departmental budget provision summary view with computed utilization and commitments.
+CREATE OR REPLACE VIEW v_department_budget_summary
+    WITH (security_invoker = true) AS
+SELECT
+    bp.budget_provision_id,
+    bp.department_id,
+    d.code AS department_code,
+    d.name AS department_name,
+    bp.financial_year_id,
+    fy.label AS financial_year,
+    bp.budget_head_id,
+    bh.code AS budget_head_code,
+    bh.name AS budget_head_name,
+    bp.allocated_amount,
+    COALESCE(req_stats.utilized_amount, 0)   AS utilized_amount,
+    COALESCE(req_stats.committed_amount, 0)  AS committed_amount,
+    (bp.allocated_amount - (COALESCE(req_stats.utilized_amount, 0) + COALESCE(req_stats.committed_amount, 0))) AS remaining_amount,
+    (bp.allocated_amount - COALESCE(req_stats.utilized_amount, 0)) AS available_amount,
+    bp.remarks,
+    bp.created_by,
+    bp.created_at,
+    bp.updated_at
+FROM budget_provisions bp
+JOIN departments d ON d.department_id = bp.department_id
+JOIN financial_years fy ON fy.financial_year_id = bp.financial_year_id
+LEFT JOIN budget_heads bh ON bh.budget_head_id = bp.budget_head_id
+LEFT JOIN LATERAL (
+    SELECT
+        SUM(CASE WHEN r.current_status IN ('APPROVED', 'PARTIALLY_APPROVED', 'FULFILMENT_PENDING', 'FULFILLED')
+                 THEN COALESCE(r.sanctioned_amount, r.tentative_total_cost) ELSE 0 END) AS utilized_amount,
+        SUM(CASE WHEN r.current_status IN ('SUBMITTED', 'UNDER_PURCHASE_COMMITTEE_REVIEW', 'UNDER_PRINCIPAL_REVIEW', 'UNDER_CDC_REVIEW', 'UNDER_FINAL_AUTHORITY_REVIEW', 'AWAITING_RESUBMISSION')
+                 THEN r.tentative_total_cost ELSE 0 END) AS committed_amount
+    FROM requests r
+    WHERE r.department_id = bp.department_id
+      AND r.financial_year_id = bp.financial_year_id
+      AND (bp.budget_head_id IS NULL OR r.budget_head_id = bp.budget_head_id)
+) req_stats ON true;
