@@ -63,10 +63,11 @@ async function store(req, parent, authorise) {
       await authorise(db);
       savedFile = await saveFile(req.file.buffer, type.ext);
       const { rows } = await db.query(
-        `INSERT INTO attachments (request_id, issue_id, file_name, mime_type, size_bytes,
+        `INSERT INTO attachments (request_id, issue_id, budget_provision_id, file_name, mime_type, size_bytes,
                                   storage_path, storage_backend, uploaded_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING attachment_id`,
-        [parent.requestId ?? null, parent.issueId ?? null, cleanFileName(req.file.originalname),
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING attachment_id`,
+        [parent.requestId ?? null, parent.issueId ?? null, parent.budgetProvisionId ?? null,
+          cleanFileName(req.file.originalname),
           type.mime, req.file.size, savedFile.storagePath, savedFile.backend, req.user.id],
       );
       return (await db.query(
@@ -142,6 +143,26 @@ attachmentsRouter.post('/attachments/:id/supersede', upload, async (req, res) =>
     if (savedFile?.storagePath) await removeFile(savedFile.storagePath, savedFile.backend);
     throw err;
   }
+});
+
+// The sanction letter behind a department's annual provision. Only the head of
+// that department (or an administrator) may attach one; the RLS insert policy
+// says the same, and is what stops a head reaching into another department.
+attachmentsRouter.post('/budget-provisions/:id/attachments', upload, async (req, res) => {
+  const budgetProvisionId = param(req, 'id');
+  const row = await store(req, { budgetProvisionId }, async (db) => {
+    const { rows } = await db.query(
+      `SELECT bp.department_id = (SELECT department_id FROM users WHERE user_id = $2) AS own_department
+         FROM budget_provisions bp WHERE bp.budget_provision_id = $1`,
+      [budgetProvisionId, req.user.id],
+    );
+    if (!rows[0]) throw notFound('Budget provision not found');
+    const isAdmin = req.user.roles.includes('ADMIN');
+    if (!isAdmin && !(req.user.roles.includes('HEAD') && rows[0].own_department)) {
+      throw forbidden('Only the head of this department can attach its budget documents');
+    }
+  });
+  res.status(201).json(attachmentRow(row));
 });
 
 attachmentsRouter.post('/issues/:id/attachments', upload, async (req, res) => {

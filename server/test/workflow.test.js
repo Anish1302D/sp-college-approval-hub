@@ -14,7 +14,8 @@ before(async () => {
   for (const [key, email] of Object.entries({
     head: 'head.cs@spcollege.edu', incharge: 'incharge@spcollege.edu',
     pc1: 'pc1@spcollege.edu', principal: 'principal@spcollege.edu',
-    cdc: 'cdc.grant@spcollege.edu', chairman: 'chairman@spcollege.edu',
+    cdc: 'cdc.grant@spcollege.edu', cdcNonGrant: 'cdc.nongrant@spcollege.edu',
+    chairman: 'chairman@spcollege.edu', vp: 'vp@spcollege.edu',
     clerk: 'clerk@spcollege.edu', admin: 'admin@spcollege.edu',
   })) {
     tok[key] = await t.login(email);
@@ -128,10 +129,10 @@ test('a draft is private to its author', async () => {
 // Submission and routing
 // ---------------------------------------------------------------------------
 
-test('submitting 6.5 lakh routes straight to CDC', async () => {
+test('every request enters at the Purchase Committee, whatever it costs', async () => {
   const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/submit`, { token: tok.head }), 200);
-  assert.equal(res.status, 'UNDER_CDC_REVIEW');
-  assert.equal(res.stage.code, 'CDC');
+  assert.equal(res.status, 'UNDER_PURCHASE_COMMITTEE_REVIEW');
+  assert.equal(res.stage.code, 'PURCHASE_COMMITTEE');
   assert.equal(res.permissions.canEdit, false);
   assert.deepEqual(res.permissions.actions, []);
 });
@@ -141,16 +142,22 @@ test('a submitted request can no longer be edited', async () => {
   expectStatus(await t.api('POST', `/api/requests/${ids.big}/submit`, { token: tok.head }), 409);
 });
 
-test('CDC is notified and sees it awaiting their decision', async () => {
-  const n = expectStatus(await t.api('GET', '/api/notifications?unread=true', { token: tok.cdc }), 200);
-  assert.ok(n.items.some((x) => x.request?.id === ids.big && /awaits your review/.test(x.subject)));
-  const list = expectStatus(await t.api('GET', '/api/requests?awaitingMe=true', { token: tok.cdc }), 200);
+test('the Purchase Committee reviews validity and is never offered an approval', async () => {
+  const list = expectStatus(await t.api('GET', '/api/requests?awaitingMe=true', { token: tok.pc1 }), 200);
   assert.deepEqual(list.items.map((r) => r.id), [ids.big]);
-  const detail = expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.cdc }), 200);
-  assert.deepEqual(detail.permissions.actions, ['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'ESCALATE']);
+  const detail = expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.pc1 }), 200);
+  assert.deepEqual(detail.permissions.actions, ['ESCALATE', 'RETURN', 'REJECT']);
+
+  // And the refusal is enforced, not merely hidden: asking anyway is refused.
+  for (const action of ['APPROVE', 'PARTIAL_APPROVE']) {
+    const body = action === 'APPROVE' ? { action }
+      : { action, itemDecisions: detail.items.map((i) => ({ requestItemId: i.id, approvedQuantity: 0 })) };
+    const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, { token: tok.pc1, body }), 422);
+    assert.match(res.error.message, /validity review only/);
+  }
 });
 
-test('the Principal can see it but not decide it', async () => {
+test('the Principal can see a request sitting with the committee but not decide it', async () => {
   expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.principal }), 200);
   const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
     token: tok.principal, body: { action: 'APPROVE' } }), 403);
@@ -163,8 +170,28 @@ test('a requester cannot approve their own request', async () => {
   assert.equal(res.error.code, 'SP004');
 });
 
-test('a purchase committee member cannot see a request that never reached them', async () => {
-  expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.pc1 }), 404);
+test('a committee pass-through moves the request to the Principal', async () => {
+  const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
+    token: tok.pc1, body: { action: 'ESCALATE', comments: 'Quotations attached and in order' } }), 201);
+  assert.equal(res.request.status, 'UNDER_PRINCIPAL_REVIEW');
+  // Having passed it on, the committee can still read it but no longer act.
+  const after = expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.pc1 }), 200);
+  assert.deepEqual(after.permissions.actions, []);
+});
+
+test('the Principal sees every request but cannot decide one above 50,000', async () => {
+  const detail = expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.principal }), 200);
+  assert.deepEqual(detail.permissions.actions, ['ESCALATE', 'REJECT', 'RETURN']);
+  const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
+    token: tok.principal, body: { action: 'APPROVE' } }), 422);
+  assert.match(res.error.message, /above ₹50,000/);
+});
+
+test('the Principal sends 6.5 lakh to the Chairman and Vice Chairman, not CDC', async () => {
+  const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
+    token: tok.principal, body: { action: 'ESCALATE', comments: 'Above the CDC ceiling' } }), 201);
+  assert.equal(res.request.status, 'UNDER_FINAL_AUTHORITY_REVIEW');
+  assert.equal(res.request.stage.code, 'FINAL_AUTHORITY');
 });
 
 // ---------------------------------------------------------------------------
@@ -173,19 +200,21 @@ test('a purchase committee member cannot see a request that never reached them',
 
 test('rejecting needs a reason', async () => {
   const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
-    token: tok.cdc, body: { action: 'REJECT' } }), 422);
+    token: tok.chairman, body: { action: 'REJECT' } }), 422);
   assert.equal(res.error.details[0].path, 'rejectionReason');
 });
 
-test('CDC escalates to the final authority', async () => {
-  const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
-    token: tok.cdc, body: { action: 'ESCALATE', comments: 'Grant budget unavailable' } }), 201);
-  assert.equal(res.request.status, 'UNDER_FINAL_AUTHORITY_REVIEW');
-  assert.deepEqual(res.request.permissions.actions, []);
-  // Once it has moved on, CDC can still read it but no longer act.
-  const again = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
-    token: tok.cdc, body: { action: 'APPROVE' } }), 403);
-  assert.equal(again.error.code, 'SP004');
+test('CDC cannot reach in and decide a request that bypassed them', async () => {
+  // Above ₹5,00,000 the request never visits CDC, so it is not theirs to see
+  // at all — 404 rather than 403, which would confirm it exists.
+  expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
+    token: tok.cdc, body: { action: 'APPROVE' } }), 404);
+});
+
+test('the joint stage names both signatures and shows which is still missing', async () => {
+  const detail = expectStatus(await t.api('GET', `/api/requests/${ids.big}`, { token: tok.chairman }), 200);
+  assert.deepEqual(detail.jointApprovals.map((a) => [a.roleCode, a.decided]),
+    [['CHAIRMAN', false], ['VICE_PRESIDENT', false]]);
 });
 
 test('the final authority cannot escalate further', async () => {
@@ -222,24 +251,32 @@ test('partial approval must be complete and within what was asked', async (s) =>
   });
   await s.test('nothing was recorded by the refused attempts', async () => {
     const tl = expectStatus(await t.api('GET', `/api/requests/${ids.big}/timeline`, { token: tok.chairman }), 200);
-    assert.deepEqual(tl.map((e) => e.action), ['SUBMIT', 'ESCALATE']);
+    assert.deepEqual(tl.map((e) => e.action), ['SUBMIT', 'ESCALATE', 'ESCALATE']);
   });
 });
 
+// Above ₹5,00,000 the Chairman and Vice Chairman decide together: one
+// signature alone leaves the request where it is.
 test('chairman approves 2 of 4 microphones, no speakers, all cables', async () => {
+  const decision = {
+    action: 'PARTIAL_APPROVE',
+    comments: 'Within trust ceiling',
+    itemDecisions: [
+      { requestItemId: ids.mic, approvedQuantity: 2 },
+      { requestItemId: ids.spk, approvedQuantity: 0 },
+      // Upper-case id: must be treated exactly like the lower-case one.
+      { requestItemId: ids.hdmi.toUpperCase(), approvedQuantity: 5 },
+    ],
+  };
+  const first = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
+    token: tok.chairman, body: decision }), 201);
+  assert.equal(first.request.status, 'UNDER_FINAL_AUTHORITY_REVIEW',
+    'one of the two joint approvers is not enough');
+  assert.deepEqual(first.request.jointApprovals.map((a) => [a.roleCode, a.decided]),
+    [['CHAIRMAN', true], ['VICE_PRESIDENT', false]]);
+
   const res = expectStatus(await t.api('POST', `/api/requests/${ids.big}/actions`, {
-    token: tok.chairman,
-    body: {
-      action: 'PARTIAL_APPROVE',
-      comments: 'Within trust ceiling',
-      itemDecisions: [
-        { requestItemId: ids.mic, approvedQuantity: 2 },
-        { requestItemId: ids.spk, approvedQuantity: 0 },
-        // Upper-case id: must be treated exactly like the lower-case one.
-        { requestItemId: ids.hdmi.toUpperCase(), approvedQuantity: 5 },
-      ],
-    },
-  }), 201);
+    token: tok.vp, body: { ...decision, comments: 'Agreed' } }), 201);
   const r = res.request;
   assert.equal(r.status, 'PARTIALLY_APPROVED');
   assert.equal(r.sanctionedAmount, 300000.5);
@@ -268,10 +305,12 @@ test('the requester was told at each step', async () => {
 
 test('every decision on the timeline carries a verified seal', async () => {
   const tl = expectStatus(await t.api('GET', `/api/requests/${ids.big}/timeline`, { token: tok.head }), 200);
-  assert.deepEqual(tl.map((e) => [e.action, e.seal]),
-    [['SUBMIT', 'UNSEALED'], ['ESCALATE', 'VERIFIED'], ['PARTIAL_APPROVE', 'VERIFIED']]);
+  assert.deepEqual(tl.map((e) => [e.action, e.seal]), [
+    ['SUBMIT', 'UNSEALED'], ['ESCALATE', 'VERIFIED'], ['ESCALATE', 'VERIFIED'],
+    ['PARTIAL_APPROVE', 'VERIFIED'], ['PARTIAL_APPROVE', 'VERIFIED'],
+  ]);
   const partial = tl.at(-1);
-  assert.equal(partial.by.name, 'Shri. K. Bhave (Chairman)');
+  assert.equal(partial.by.name, 'Smt. L. Karve (Vice President)');
   assert.equal(partial.amountApproved, 300000.5);
 });
 
@@ -299,7 +338,7 @@ test('editing a recorded decision directly in the database breaks its seal', asy
 // The small route, lists and dashboards
 // ---------------------------------------------------------------------------
 
-test('a 30,000 request goes to the Purchase Committee and is approved in full', async () => {
+test('a 30,000 request is checked by the committee and approved by the Principal', async () => {
   const draft = expectStatus(await t.api('POST', '/api/requests', {
     token: tok.incharge,
     body: { title: 'Printer cartridges', budgetHeadId: ids.office,
@@ -309,19 +348,144 @@ test('a 30,000 request goes to the Purchase Committee and is approved in full', 
   const submitted = expectStatus(await t.api('POST', `/api/requests/${ids.small}/submit`, { token: tok.incharge }), 200);
   assert.equal(submitted.stage.code, 'PURCHASE_COMMITTEE');
 
+  const passed = expectStatus(await t.api('POST', `/api/requests/${ids.small}/actions`, {
+    token: tok.pc1, body: { action: 'ESCALATE', comments: 'Complete' } }), 201);
+  assert.equal(passed.request.status, 'UNDER_PRINCIPAL_REVIEW');
+
+  const detail = expectStatus(await t.api('GET', `/api/requests/${ids.small}`, { token: tok.principal }), 200);
+  assert.deepEqual(detail.permissions.actions, ['APPROVE', 'PARTIAL_APPROVE', 'REJECT', 'RETURN'],
+    'at or below ₹50,000 the Principal decides');
+
   const res = expectStatus(await t.api('POST', `/api/requests/${ids.small}/actions`, {
-    token: tok.pc1, body: { action: 'APPROVE' } }), 201);
+    token: tok.principal, body: { action: 'APPROVE' } }), 201);
   assert.equal(res.request.status, 'APPROVED');
   assert.equal(res.request.sanctionedAmount, 30000);
   const tl = expectStatus(await t.api('GET', `/api/requests/${ids.small}/timeline`, { token: tok.incharge }), 200);
   assert.equal(tl.at(-1).seal, 'VERIFIED');
 });
 
+// ---------------------------------------------------------------------------
+// Return for correction and resubmission
+// ---------------------------------------------------------------------------
+
+test('a returned request comes back to the requester with the reason, and nothing moves meanwhile', async () => {
+  const draft = expectStatus(await t.api('POST', '/api/requests', {
+    token: tok.head,
+    body: { title: 'Lab stools', budgetHeadId: ids.office,
+            items: [{ budgetItemId: ids['CART-01'], quantity: 2, unitCost: 4000 }] },
+  }), 201);
+  ids.returned = draft.id;
+  expectStatus(await t.api('POST', `/api/requests/${ids.returned}/submit`, { token: tok.head }), 200);
+
+  // A return has to say what is wrong; an empty one is refused.
+  expectStatus(await t.api('POST', `/api/requests/${ids.returned}/actions`, {
+    token: tok.pc1, body: { action: 'RETURN' } }), 422);
+
+  const res = expectStatus(await t.api('POST', `/api/requests/${ids.returned}/actions`, {
+    token: tok.pc1, body: { action: 'RETURN', comments: 'Quotation is unsigned — attach a stamped one' } }), 201);
+  assert.equal(res.request.status, 'AWAITING_RESUBMISSION');
+
+  const mine = expectStatus(await t.api('GET', `/api/requests/${ids.returned}`, { token: tok.head }), 200);
+  assert.equal(mine.corrections[0].reason, 'Quotation is unsigned — attach a stamped one');
+  assert.equal(mine.corrections[0].requestedBy.name, 'R. Joshi (Purchase Committee)');
+  assert.equal(mine.permissions.canEdit, true, 'the requester may correct it');
+  assert.equal(mine.permissions.canResubmit, true);
+
+  // While it is with the requester, no approver can push it along.
+  const stuck = expectStatus(await t.api('POST', `/api/requests/${ids.returned}/actions`, {
+    token: tok.pc1, body: { action: 'ESCALATE' } }), 409);
+  assert.equal(stuck.error.code, 'SP017');
+});
+
+test('the requester corrects the request and resubmits it under the same number', async () => {
+  const before = expectStatus(await t.api('GET', `/api/requests/${ids.returned}`, { token: tok.head }), 200);
+  const itemId = before.items[0].id;
+
+  expectStatus(await t.api('PATCH', `/api/requests/${ids.returned}`, {
+    token: tok.head, body: { description: 'Revised: stamped quotation attached' } }), 200);
+  const repriced = expectStatus(await t.api('PATCH', `/api/requests/${ids.returned}/items/${itemId}`, {
+    token: tok.head, body: { quantity: 3 } }), 200);
+  assert.equal(repriced.tentativeTotalCost, 12000);
+
+  const res = expectStatus(await t.api('POST', `/api/requests/${ids.returned}/resubmit`, {
+    token: tok.head, body: { comments: 'Stamped quotation attached' } }), 200);
+  assert.equal(res.requestNumber, before.requestNumber, 'the request keeps its number');
+  assert.equal(res.status, 'UNDER_PURCHASE_COMMITTEE_REVIEW', 'it goes back to whoever returned it');
+  assert.equal(res.versionNumber, 2);
+  assert.equal(res.tentativeTotalCost, 12000);
+  assert.equal(res.corrections[0].resolvedByVersion, 2, 'the correction is marked answered');
+  assert.equal(res.permissions.canResubmit, false);
+
+  const tl = expectStatus(await t.api('GET', `/api/requests/${ids.returned}/timeline`, { token: tok.head }), 200);
+  assert.deepEqual(tl.map((e) => e.action), ['SUBMIT', 'RETURN', 'RESUBMIT']);
+  assert.equal(tl.at(-1).seal, 'VERIFIED', 'a resubmission is sealed like any other step');
+  assert.equal(tl.at(-2).comments, 'Quotation is unsigned — attach a stamped one',
+    'the original return is still in the history');
+});
+
+test('resubmission is the requester\'s alone, and only while a correction is open', async () => {
+  // The request is back under review, so there is nothing to resubmit.
+  const early = expectStatus(await t.api('POST', `/api/requests/${ids.returned}/resubmit`, {
+    token: tok.head, body: {} }), 409);
+  assert.equal(early.error.code, 'SP018');
+
+  expectStatus(await t.api('POST', `/api/requests/${ids.returned}/actions`, {
+    token: tok.pc1, body: { action: 'RETURN', comments: 'One more correction, please' } }), 201);
+
+  // Someone else cannot resubmit on the requester's behalf.
+  const notMine = await t.api('POST', `/api/requests/${ids.returned}/resubmit`, {
+    token: tok.incharge, body: {} });
+  assert.ok([403, 404].includes(notMine.status), `expected a refusal, got ${notMine.status}`);
+
+  // The committee cannot return it twice over, nor decide it while it is out.
+  expectStatus(await t.api('POST', `/api/requests/${ids.returned}/actions`, {
+    token: tok.pc1, body: { action: 'RETURN', comments: 'Again' } }), 409);
+});
+
+test('CDC decides between 50,000 and 5 lakh, and cannot return for correction', async () => {
+  const draft = expectStatus(await t.api('POST', '/api/requests', {
+    token: tok.head,
+    body: { title: 'Departmental projector', budgetHeadId: ids.it,
+            items: [{ budgetItemId: ids['SPK-01'], quantity: 4, unitCost: 50000 }] },
+  }), 201);
+  ids.cdcReq = draft.id;
+  expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/submit`, { token: tok.head }), 200);
+  expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/actions`, {
+    token: tok.pc1, body: { action: 'ESCALATE', comments: 'In order' } }), 201);
+  const toCdc = expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/actions`, {
+    token: tok.principal, body: { action: 'ESCALATE', comments: 'For CDC' } }), 201);
+  assert.equal(toCdc.request.status, 'UNDER_CDC_REVIEW', '₹2,00,000 is CDC\'s to decide');
+
+  // Returning for correction belongs to the committee and the Principal only.
+  const returned = expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/actions`, {
+    token: tok.cdc, body: { action: 'RETURN', comments: 'Needs a better quote' } }), 422);
+  assert.match(returned.error.message, /Purchase Committee and the Principal/);
+
+  // Nor can CDC pass it further up: at this amount the decision is theirs.
+  const detail = expectStatus(await t.api('GET', `/api/requests/${ids.cdcReq}`, { token: tok.cdc }), 200);
+  assert.deepEqual(detail.permissions.actions, ['APPROVE', 'PARTIAL_APPROVE', 'REJECT']);
+  expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/actions`, {
+    token: tok.cdc, body: { action: 'ESCALATE' } }), 422);
+
+  // Both CDC roles are required, in either order; the non-grant member first.
+  const first = expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/actions`, {
+    token: tok.cdcNonGrant, body: { action: 'APPROVE' } }), 201);
+  assert.equal(first.request.status, 'UNDER_CDC_REVIEW');
+  assert.deepEqual(first.request.jointApprovals.map((a) => [a.roleCode, a.decided]),
+    [['CDC_GRANT_MEMBER', false], ['CDC_NON_GRANT_MEMBER', true]]);
+
+  const second = expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/actions`, {
+    token: tok.cdc, body: { action: 'APPROVE' } }), 201);
+  assert.equal(second.request.status, 'APPROVED');
+  assert.equal(second.request.sanctionedAmount, 200000);
+});
+
 test('lists are scoped to what each person may see', async () => {
   const mine = expectStatus(await t.api('GET', '/api/requests', { token: tok.incharge }), 200);
   assert.deepEqual(mine.items.map((r) => r.id), [ids.small]);
   const principal = expectStatus(await t.api('GET', '/api/requests', { token: tok.principal }), 200);
-  assert.deepEqual(new Set(principal.items.map((r) => r.id)), new Set([ids.big, ids.small]));
+  assert.deepEqual(new Set(principal.items.map((r) => r.id)),
+    new Set([ids.big, ids.small, ids.returned, ids.cdcReq]));
   const partial = expectStatus(await t.api('GET', '/api/requests?status=PARTIALLY_APPROVED', { token: tok.principal }), 200);
   assert.deepEqual(partial.items.map((r) => r.id), [ids.big]);
   expectStatus(await t.api('GET', '/api/requests?status=NONSENSE', { token: tok.principal }), 422);
@@ -337,7 +501,9 @@ test('search treats wildcards literally', async () => {
 test('the Principal dashboard counts the college; a requester\'s counts their own', async () => {
   const p = expectStatus(await t.api('GET', '/api/dashboard', { token: tok.principal }), 200);
   assert.equal(p.financialYear, '2026-27');
-  assert.deepEqual([p.counts.total, p.counts.approved, p.counts.partiallyApproved], [2, 1, 1]);
+  // Four requests: the 6.5 lakh one partially approved, the 30,000 and the
+  // 2 lakh ones approved, and one sitting with its requester for correction.
+  assert.deepEqual([p.counts.total, p.counts.approved, p.counts.partiallyApproved], [4, 2, 1]);
   const i = expectStatus(await t.api('GET', '/api/dashboard', { token: tok.incharge }), 200);
   assert.deepEqual([i.counts.total, i.counts.approved], [1, 1]);
 });
@@ -354,7 +520,7 @@ test('spending by budget head is scoped and counts only approved money', async (
   assert.equal(p.financialYear, '2026-27');
   const it = p.rows.find((r) => r.budgetHead.name === 'IT Equipment');
   const office = p.rows.find((r) => r.budgetHead.name === 'Office Expenses');
-  assert.deepEqual([it.requests, it.approved, it.requested, it.sanctioned], [1, 1, 650000.5, 300000.5]);
+  assert.deepEqual([it.requests, it.approved, it.requested, it.sanctioned], [2, 2, 850000.5, 500000.5]);
   assert.deepEqual([office.approved, office.sanctioned], [1, 30000]);
   assert.equal(it.budgetHead.headType, 'CAPITAL');
 
@@ -382,14 +548,13 @@ test('CSV export neutralises spreadsheet formulas', async () => {
 // ---------------------------------------------------------------------------
 
 test('an UP_CHAIN CDC comment reaches the Principal but not the requester', async () => {
-  expectStatus(await t.api('POST', `/api/requests/${ids.big}/comments`, {
+  expectStatus(await t.api('POST', `/api/requests/${ids.cdcReq}/comments`, {
     token: tok.cdc,
     body: { body: 'Grant budget is unavailable. Consider Non-Grant budget.', visibility: 'UP_CHAIN' },
   }), 201);
   const seen = async (who) =>
-    expectStatus(await t.api('GET', `/api/requests/${ids.big}/comments`, { token: tok[who] }), 200).length;
+    expectStatus(await t.api('GET', `/api/requests/${ids.cdcReq}/comments`, { token: tok[who] }), 200).length;
   assert.equal(await seen('principal'), 1);
-  assert.equal(await seen('chairman'), 1);
   assert.equal(await seen('head'), 0);
 });
 
@@ -427,7 +592,8 @@ test('carry-forward into the next year keeps the history and links back', async 
   assert.equal(original.status, 'CARRIED_FORWARD');
   const tl = expectStatus(await t.api('GET', `/api/requests/${ids.big}/timeline`, { token: tok.head }), 200);
   assert.equal(tl.at(-1).action, 'CARRY_FORWARD');
-  assert.equal(tl.length, 4, 'the original history is preserved');
+  // submit, committee pass-through, Principal referral, both joint decisions.
+  assert.equal(tl.length, 6, 'the original history is preserved');
 
   const again = expectStatus(await t.api('POST', `/api/requests/${ids.big}/carry-forward`, {
     token: tok.head, body: { financialYearId: rows[0].financial_year_id } }), 409);

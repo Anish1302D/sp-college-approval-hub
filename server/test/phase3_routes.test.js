@@ -198,6 +198,19 @@ test('4. Versioned documents', async (s) => {
     const dl = await t.api('GET', `/api/attachments/${attId}`, { token: tok.head });
     assert.equal(dl.status, 200);
   });
+
+  // fn_supersede_attachment runs as its owner, so RLS does not stand between
+  // a caller and someone else's documents — it has to refuse them itself.
+  await s.test('a stranger cannot replace a document on a request they cannot see', async () => {
+    const outsider = await t.login('head.chem@spcollege.edu');
+    const res = await t.api('POST', `/api/attachments/${attId}/supersede`, {
+      token: outsider, form: pdf('forged.pdf', 120).form,
+    });
+    assert.equal(res.status, 403, `expected a refusal, got ${res.status}`);
+
+    const list = expectStatus(await t.api('GET', `/api/requests/${draftId}/attachments`, { token: tok.head }), 200);
+    assert.equal(list.some((a) => a.fileName === 'forged.pdf'), false, 'nothing was written');
+  });
 });
 
 test('5. Budget provision endpoints', async (s) => {

@@ -26,12 +26,15 @@ BEGIN
             USING ERRCODE = 'SP017';
     END IF;
 
-    -- Cannot enter CDC or FINAL_AUTHORITY without a prior Principal approval action
+    -- Cannot enter CDC or FINAL_AUTHORITY without a prior Principal approval
+    -- action. A carried-forward copy inherits the stage it left off at, and
+    -- its history lives on the request it came from, so that is where the
+    -- Principal's decision is looked for.
     IF NEW.current_stage_id IN (v_cdc_stage_id, v_final_stage_id)
        AND (OLD.current_stage_id IS NULL OR OLD.current_stage_id <> NEW.current_stage_id) THEN
         IF NOT EXISTS (
             SELECT 1 FROM approval_actions
-            WHERE request_id = NEW.request_id
+            WHERE request_id = COALESCE(NEW.carried_forward_from_request_id, NEW.request_id)
               AND stage_id   = v_principal_stage_id
               AND action IN ('APPROVE', 'PARTIAL_APPROVE', 'ESCALATE', 'FORWARD', 'RETURN')
         ) THEN
@@ -289,15 +292,49 @@ DECLARE
     v_old         attachments%ROWTYPE;
     v_new_id      UUID;
     v_req_v       INTEGER;
+    v_req_status  request_status;
 BEGIN
+    -- SECURITY DEFINER: this function runs with the owner's rights, so RLS
+    -- does not protect the rows it touches and every check has to be made
+    -- here. Without them any signed-in user could replace any document on any
+    -- request in the college.
+    IF app_current_user_id() IS NOT NULL
+       AND p_uploaded_by IS DISTINCT FROM app_current_user_id() THEN
+        RAISE EXCEPTION 'Actor % does not match the authenticated user', p_uploaded_by
+            USING ERRCODE = 'SP013';
+    END IF;
+
     SELECT * INTO v_old FROM attachments WHERE attachment_id = p_old_attachment_id FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Attachment % not found', p_old_attachment_id
             USING ERRCODE = 'SP001';
     END IF;
 
+    -- The same reach the attachments_insert policy grants.
+    IF app_current_user_id() IS NOT NULL AND NOT (
+        app_has_role('ADMIN')
+        OR v_old.uploaded_by = app_current_user_id()
+        OR (v_old.request_id IS NOT NULL AND app_can_see_request(v_old.request_id))
+        OR (v_old.issue_id   IS NOT NULL AND app_can_see_issue(v_old.issue_id))
+        OR (v_old.budget_provision_id IS NOT NULL AND app_has_role('HEAD') AND EXISTS (
+            SELECT 1 FROM budget_provisions bp
+             WHERE bp.budget_provision_id = v_old.budget_provision_id
+               AND bp.department_id = (SELECT department_id FROM users WHERE user_id = app_current_user_id())
+        ))
+    ) THEN
+        RAISE EXCEPTION 'User % may not replace attachment %', app_current_user_id(), p_old_attachment_id
+            USING ERRCODE = 'SP004';
+    END IF;
+
     IF v_old.request_id IS NOT NULL THEN
-        SELECT current_version_number INTO v_req_v FROM requests WHERE request_id = v_old.request_id;
+        SELECT current_version_number, current_status INTO v_req_v, v_req_status
+          FROM requests WHERE request_id = v_old.request_id;
+
+        -- Once a request is closed its documents are part of the record.
+        IF v_req_status IN ('CLOSED', 'CARRIED_FORWARD') THEN
+            RAISE EXCEPTION 'Request is closed; its documents cannot be replaced'
+                USING ERRCODE = 'SP003';
+        END IF;
     END IF;
 
     INSERT INTO attachments (

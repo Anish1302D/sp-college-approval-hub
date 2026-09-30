@@ -345,18 +345,28 @@ const courseSchema = z.object({
   departmentId: z.number().int().positive(),
   code: z.string().trim().toUpperCase().min(1).max(30).regex(/^[A-Z0-9_-]+$/, 'Code must be letters, numbers or hyphens'),
   name: z.string().trim().min(2).max(200),
+  fundingType: z.enum(['GRANT', 'NON_GRANT']).optional(),
+});
+
+const courseRow = (r) => ({
+  id: r.course_id,
+  departmentId: r.department_id,
+  deptName: r.dept_name,
+  code: r.code,
+  name: r.name,
+  fundingType: r.funding_type,
 });
 
 adminRouter.get('/courses', async (req, res) => {
   const { departmentId } = z.object({ departmentId: z.coerce.number().int().positive().optional() }).parse(req.query);
   const { rows } = await anonQuery(
-    `SELECT c.course_id, c.department_id, c.code, c.name, d.name AS dept_name
+    `SELECT c.course_id, c.department_id, c.code, c.name, c.funding_type, d.name AS dept_name
        FROM courses c JOIN departments d ON d.department_id = c.department_id
       WHERE $1::int IS NULL OR c.department_id = $1
       ORDER BY d.name, c.name`,
     [departmentId ?? null],
   );
-  res.json(rows.map((r) => ({ id: r.course_id, departmentId: r.department_id, deptName: r.dept_name, code: r.code, name: r.name })));
+  res.json(rows.map(courseRow));
 });
 
 adminRouter.post('/courses', async (req, res) => {
@@ -365,13 +375,13 @@ adminRouter.post('/courses', async (req, res) => {
     const dept = await db.query('SELECT 1 FROM departments WHERE department_id = $1', [body.departmentId]);
     if (!dept.rowCount) throw notFound('Department not found');
     const { rows } = await db.query(
-      `INSERT INTO courses (department_id, code, name) VALUES ($1, $2, $3)
-       RETURNING course_id, department_id, code, name`,
-      [body.departmentId, body.code, body.name],
+      `INSERT INTO courses (department_id, code, name, funding_type) VALUES ($1, $2, $3, COALESCE($4, 'GRANT'))
+       RETURNING course_id, department_id, code, name, funding_type`,
+      [body.departmentId, body.code, body.name, body.fundingType ?? null],
     );
     return rows[0];
   });
-  res.status(201).json({ id: result.course_id, departmentId: result.department_id, code: result.code, name: result.name });
+  res.status(201).json(courseRow(result));
 });
 
 adminRouter.patch('/courses/:id', async (req, res) => {
@@ -382,16 +392,18 @@ adminRouter.patch('/courses/:id', async (req, res) => {
     const push = (col, val) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
     if (body.code !== undefined) push('code', body.code);
     if (body.name !== undefined) push('name', body.name);
+    if (body.fundingType !== undefined) push('funding_type', body.fundingType);
     if (!sets.length) throw new HttpError(400, 'Nothing to update');
     vals.push(courseId);
     const { rows, rowCount } = await db.query(
-      `UPDATE courses SET ${sets.join(', ')} WHERE course_id = $${vals.length} RETURNING course_id, department_id, code, name`,
+      `UPDATE courses SET ${sets.join(', ')} WHERE course_id = $${vals.length}
+       RETURNING course_id, department_id, code, name, funding_type`,
       vals,
     );
     if (!rowCount) throw notFound('Course not found');
     return rows[0];
   });
-  res.json({ id: result.course_id, departmentId: result.department_id, code: result.code, name: result.name });
+  res.json(courseRow(result));
 });
 
 adminRouter.delete('/courses/:id', async (req, res) => {

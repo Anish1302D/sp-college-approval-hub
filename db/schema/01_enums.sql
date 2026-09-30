@@ -68,3 +68,7 @@ CREATE TYPE issue_status AS ENUM (
     'RESOLVED',
     'CLOSED'
 );
+
+-- Whether a course is government-aided. Grant and non-grant courses answer to
+-- different CDC members (docs/plan/decisions.md).
+CREATE TYPE course_funding_type AS ENUM ('GRANT', 'NON_GRANT');

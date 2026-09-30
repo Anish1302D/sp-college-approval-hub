@@ -24,5 +24,7 @@ INSERT INTO schema_migrations (filename) VALUES
     ('20260927T211500_amount_routing_and_cdc_joint.sql'),
     ('20260927T220000_resubmission_and_versioning.sql'),
     ('20260927T230000_document_versioning.sql'),
-    ('20260927T240000_budget_provision.sql')
+    ('20260927T240000_budget_provision.sql'),
+    ('20260929T120000_fix_return_action_and_resubmit_seal.sql'),
+    ('20260929T130000_course_funding_type.sql')
 ON CONFLICT (filename) DO NOTHING;

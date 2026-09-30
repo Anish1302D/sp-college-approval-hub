@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { requireRole } from '../auth.js';
 import { queryAll, withUser } from '../db.js';
 import { notFound } from '../errors.js';
+import { SECTIONS, assembleReport, renderReportHtml } from '../reporting.js';
+import { loadDetail } from './requests.js';
 import { flag, intId, pagination, param } from '../validate.js';
 
 // Dashboards, reports, exports, the audit log and notifications. All request
@@ -124,6 +126,63 @@ reportsRouter.get('/reports/by-budget-head', async (req, res) => {
     };
   });
   res.json(body);
+});
+
+// ---------------------------------------------------------------------------
+// The formal report on one request
+// ---------------------------------------------------------------------------
+
+// The stage reports of the revised requirements, each a view of the same
+// assembled data rather than a separate pipeline — so no report can quote a
+// figure the complete one does not.
+const STAGE_REPORTS = {
+  complete: { title: 'Procurement Approval Report', sections: SECTIONS },
+  'purchase-committee': { title: 'Purchase Committee Review Report', sections: ['request', 'items', 'budget', 'documents', 'workflow', 'route'] },
+  principal: { title: 'Principal Review Report', sections: ['request', 'items', 'budget', 'documents', 'workflow', 'route'] },
+  cdc: { title: 'CDC Review Report', sections: ['request', 'items', 'budget', 'workflow', 'route'] },
+  board: { title: 'Chairman & Vice Chairman Review Report', sections: ['request', 'items', 'budget', 'workflow', 'route'] },
+  resubmission: { title: 'Resubmission Report', sections: ['request', 'resubmissions', 'documents', 'workflow'] },
+  rejection: { title: 'Rejection Report', sections: ['request', 'items', 'workflow'] },
+  'partial-approval': { title: 'Partial Approval Report', sections: ['request', 'items', 'budget', 'workflow', 'route'] },
+  decision: { title: 'Final Decision Report', sections: ['request', 'items', 'budget', 'workflow', 'route'] },
+};
+
+const reportKind = z.enum(Object.keys(STAGE_REPORTS)).default('complete');
+
+/**
+ * Loads the request as the caller may see it, then builds its report. Report
+ * access needs no rules of its own: the request is read under the caller's own
+ * row-level security, so anyone who cannot open the request cannot print it
+ * either, and a report never contains a row its reader could not already see.
+ */
+async function buildReport(req, kind) {
+  return withUser(req.user.id, async (db) => {
+    const detail = await loadDetail(db, param(req, 'id'), req.user);
+    if (!detail) throw notFound('Request not found');
+    return { report: await assembleReport(db, detail), spec: STAGE_REPORTS[kind] };
+  });
+}
+
+reportsRouter.get('/requests/:id/report', async (req, res) => {
+  const kind = reportKind.parse(req.query.kind);
+  const { report, spec } = await buildReport(req, kind);
+  res.json({ kind, title: spec.title, sections: spec.sections, ...report });
+});
+
+reportsRouter.get('/requests/:id/report.html', async (req, res) => {
+  const kind = reportKind.parse(req.query.kind);
+  const { report, spec } = await buildReport(req, kind);
+  res.type('text/html; charset=utf-8').send(renderReportHtml(report, spec));
+});
+
+// The same page, offered as a file Word opens and can edit. Word has read
+// HTML in a .doc container since Office 2000, so this needs no converter.
+reportsRouter.get('/requests/:id/report.doc', async (req, res) => {
+  const kind = reportKind.parse(req.query.kind);
+  const { report, spec } = await buildReport(req, kind);
+  res.type('application/msword');
+  res.attachment(`${report.request.requestNumber}-${kind}.doc`);
+  res.send(renderReportHtml(report, spec));
 });
 
 // The attention panel's target: opens straight onto the stale requests rather

@@ -73,7 +73,7 @@ masterRouter.get('/courses', async (req, res) => {
   const { departmentId } = z.object({ departmentId: intId.optional() }).parse(req.query);
   const rows = await withUser(req.user.id, async (db) =>
     (await db.query(
-      `SELECT course_id, department_id, code, name FROM courses
+      `SELECT course_id, department_id, code, name, funding_type FROM courses
         WHERE $1::int IS NULL OR department_id = $1 ORDER BY name`,
       [departmentId ?? null],
     )).rows);
@@ -82,6 +82,7 @@ masterRouter.get('/courses', async (req, res) => {
     departmentId: r.department_id,
     code: r.code,
     name: r.name,
+    fundingType: r.funding_type,
   })));
 });
 

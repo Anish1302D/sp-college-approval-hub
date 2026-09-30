@@ -147,6 +147,9 @@ standard reserves classes beginning `0`–`4` and `A`–`H` for itself and leave
 | `SP013` | Actor does not match the authenticated session user | 403 |
 | `SP014` | Request's status cannot be carried forward | 409 |
 | `SP015` | Carry-forward target year is not later than the current one | 422 |
+| `SP016` | Stage would advance past the Principal without a Principal decision | 409 |
+| `SP017` | Request is awaiting the requester's resubmission | 409 |
+| `SP018` | Request was not returned for correction, so it cannot be resubmitted | 409 |
 
 `SP004` is also raised when the caller can *read* a request but not act on it —
 an approver the request has moved past, or the Principal looking at a request

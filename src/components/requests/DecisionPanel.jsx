@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Scissors, Send, XCircle } from 'lucide-react';
+import { CheckCircle2, CornerUpLeft, Scissors, Send, XCircle } from 'lucide-react';
 import { api } from '../../api/client';
 import { money, quantity } from '../../api/format';
 import { useAction } from '../../hooks/useApi';
@@ -41,6 +41,32 @@ const CHOICES = {
     dot: 'bg-indigo-500',
     done: 'Escalated to the next authority',
   },
+  RETURN: {
+    label: 'Send back for correction',
+    icon: CornerUpLeft,
+    idle: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 hover:border-amber-300',
+    active: 'bg-amber-600 hover:bg-amber-700 text-white border border-amber-600 shadow-amber-200 shadow-md',
+    dot: 'bg-amber-500',
+    done: 'Sent back to the requester for correction',
+  },
+};
+
+// Where the request goes next, named rather than left as "escalate". The bands
+// are the Principal's: up to ₹50,000 they decide, then CDC, then the Chairman
+// and Vice Chairman (docs/plan/decisions.md).
+function escalateLabel(stageCode, amount) {
+  if (stageCode === 'PURCHASE_COMMITTEE') return 'Pass to Principal';
+  if (stageCode === 'PRINCIPAL') {
+    return amount <= 500000 ? 'Refer to CDC' : 'Refer to Chairman & Vice Chairman';
+  }
+  return 'Escalate';
+}
+
+const STAGE_NOTE = {
+  PURCHASE_COMMITTEE: 'The committee checks that the request is complete and properly documented. '
+    + 'It cannot approve the spending — passing it on sends it to the Principal, who decides.',
+  PRINCIPAL: 'Every request reaches you, whatever it costs. You decide up to ₹50,000; above that the '
+    + 'decision belongs to CDC, and above ₹5,00,000 to the Chairman and Vice Chairman.',
 };
 
 // Whole paise, so the preview total adds up the way the server's NUMERIC does.
@@ -72,8 +98,14 @@ export const DecisionPanel = ({ request }) => {
     ? request.items.reduce((sum, i) => sum + lineAmount(i), 0) / 100
     : null;
 
+  const label = (code) =>
+    (code === 'ESCALATE' ? escalateLabel(request.stage.code, Number(request.tentativeTotalCost)) : CHOICES[code].label);
+
   const problems = [];
   if (action === 'REJECT' && reason.trim().length < 3) problems.push('Give a reason for rejecting.');
+  if (action === 'RETURN' && comments.trim().length < 3) {
+    problems.push('Say what needs correcting — it is all the requester will see.');
+  }
   if (action === 'PARTIAL_APPROVE') {
     for (const i of request.items) {
       const { displayName } = parseCustomItem(i.budgetItem, i.remarks);
@@ -112,8 +144,28 @@ export const DecisionPanel = ({ request }) => {
       <div>
         <h4 className="text-xs font-bold text-gray-900">Your decision — {request.stage.name}</h4>
         <p className="text-[11px] text-gray-500 mt-0.5">
-          {request.stage.isFinal ? 'This is the final stage; there is no further escalation.' : 'Escalating sends the request to the next authority.'}
+          {STAGE_NOTE[request.stage.code]
+            ?? (request.stage.isFinal
+              ? 'This is the final stage; there is no further escalation.'
+              : 'Escalating sends the request to the next authority.')}
         </p>
+        {request.jointApprovals?.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {request.jointApprovals.map((a) => (
+              <span key={a.roleCode}
+                className={`px-2 py-1 rounded-lg text-[10px] font-semibold border ${
+                  a.decided
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-white text-gray-500 border-gray-200'
+                }`}>
+                {a.roleName}: {a.decided ? `recorded${a.by ? ` — ${a.by.name}` : ''}` : 'still to decide'}
+              </span>
+            ))}
+            <span className="text-[10px] text-gray-500 self-center">
+              Both are required; either may go first.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Action picker — each button is persistently color-coded */}
@@ -134,7 +186,7 @@ export const DecisionPanel = ({ request }) => {
               {/* Persistent color dot when unselected so meaning is clear */}
               {!selected && <span className={`w-2 h-2 rounded-full ${c.dot} shrink-0`} />}
               <Icon className="w-3.5 h-3.5 shrink-0" />
-              {c.label}
+              {label(code)}
             </button>
           );
         })}
@@ -186,7 +238,11 @@ export const DecisionPanel = ({ request }) => {
 
       {action && (
         <>
-          <textarea rows={2} className={inputCls} placeholder="Remarks (optional)" value={comments} onChange={(e) => setComments(e.target.value)} />
+          <textarea rows={2} className={inputCls}
+            placeholder={action === 'RETURN'
+              ? 'What needs correcting? (required — this is what the requester is shown)'
+              : 'Remarks (optional)'}
+            value={comments} onChange={(e) => setComments(e.target.value)} />
           {problems.length > 0 && (
             <ul className="text-[11px] text-red-600 list-disc pl-4 space-y-0.5">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
           )}
@@ -194,7 +250,7 @@ export const DecisionPanel = ({ request }) => {
             <button onClick={() => setAction(null)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100">Cancel</button>
             <button onClick={submit} disabled={busy || problems.length > 0}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 ${CHOICES[action].active}`}>
-              {busy ? 'Recording…' : `Confirm: ${CHOICES[action].label.toLowerCase()}`}
+              {busy ? 'Recording…' : `Confirm: ${label(action).toLowerCase()}`}
             </button>
           </div>
           <p className="text-[10px] text-gray-400">Your decision is recorded with your name and sealed in the request's history.</p>

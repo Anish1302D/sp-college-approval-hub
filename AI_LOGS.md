@@ -328,3 +328,87 @@ Implement Phase 2 multi-step requirement (Sub-steps A through D) per `docs/plan/
 - **Git Commit & Push**:
   - Committed and pushed all Phase 2 migrations, schema updates, summaries, and code-review fixes to GitHub branch `revisit`.
 
+## 2026-09-29 (Phases 3-7: workflow completion, resubmission repair, reporting, security sweep)
+
+### Prompt
+
+Work on the `revisit` branch. Read `prompts.md` and the plan documents, finish
+the resubmission work and the remaining phases, review the code, and leave the
+email-sending code alone. Do not commit or push.
+
+### What was actually wrong
+
+Phases 1-3 were reported complete, but three things were broken in ways the
+test suite was hiding:
+
+1. **Resubmission could never work on a deployed database.**
+   `db/schema/13_record_action.sql` held a corrected `fn_record_action` in which
+   `RETURN` sets `AWAITING_RESUBMISSION` and writes a `correction_requests` row.
+   The migration that shipped it (`20260927T211500`) carried an older copy where
+   `RETURN` behaved like `COMMENT`. A database built from `db/schema/` was right;
+   one built by applying migrations - the college server - was not, so
+   `fn_resubmit_request` would have raised SP018 forever. The migration path had
+   silently drifted from the schema path.
+2. **`fn_supersede_attachment` had no authorisation check at all.** It is
+   `SECURITY DEFINER`, so RLS does not protect what it touches, and neither it
+   nor its route checked anything: any signed-in user could replace the
+   quotation on any request in the college, including a decided one.
+3. **Carry-forward was impossible for anything that had reached CDC or the
+   Chairman.** The stage-progression trigger fired on insert, and the
+   carried-forward copy inherits its stage but has no history, so the Principal
+   decision it demanded could never exist. The test that would have caught it
+   was already failing for another reason.
+
+### Work completed
+
+- **Migration `20260929T120000`** restates `fn_record_action`,
+  `fn_resubmit_request` (now with the `p_signature_hash` parameter, dropping the
+  three-argument overload first) and `fn_enforce_stage_progression` verbatim
+  from `db/schema/`, and carries the carry-forward fix. The two build paths are
+  now compared directly - build from schema, replay migrations, diff every
+  function definition - and agree.
+- **Migration `20260929T130000`** adds `courses.funding_type` (Grant /
+  Non-Grant), with the API and master-data screen to set it.
+- **Authorisation**: `fn_supersede_attachment` given the checks the RLS policies
+  would have made; `POST /api/budget-provisions` given the role check that was
+  a `TODO`; SP016/SP017/SP018 mapped so they stop surfacing as 500s.
+- **`permissions.actions`** computed per stage and amount band instead of a
+  fixed list, with the same rules repeated in the route handler.
+- **Resubmission end to end**: editing allowed while a request is out for
+  correction, the correction reason carried on the request detail, the action
+  sealed like every other, and a requester-facing panel
+  (`RequestEditPanel.jsx`, replacing `DraftPanel.jsx`) that shows what was
+  asked for and resubmits under the same request number.
+- **Interface**: send-back-for-correction with a required reason; escalate
+  named after its destination; per-stage notes; both signatures shown at CDC and
+  the board; document version history with replace-not-delete; a budget context
+  panel during review; a departmental budgets page; corrections list; report
+  buttons.
+- **Reporting module** (`server/src/reporting.js`): sections A-H assembled from
+  the same rows the workflow writes, nine stage reports as views of that one
+  assembly, printable to PDF and openable in Word, access inherited from the
+  request itself. No rendering dependency was added - see
+  `docs/plan/phase5-reporting-notes.md` for why that decision is left open.
+- **Tests**: 76 -> 133, with the 20 old-workflow failures rewritten rather than
+  deleted, and new coverage for resubmission, the two-role stages, the report,
+  and the supersede bypass. The 52 RLS checks still pass.
+- **Docs**: `phase3-api-notes.md`, `phase3-security-review.md`,
+  `phase4-frontend-notes.md`, `phase5-reporting-notes.md`,
+  `phase6-security-report.md`; `requirement.md` and `readme.md` rewritten to the
+  workflow as it now behaves.
+- **Verified in the browser**: raised a request as a head, returned it as the
+  Purchase Committee, corrected and resubmitted it as the head, and rendered
+  its report. Three defects were found this way that the tests did not catch -
+  the raw `AWAITING_RESUBMISSION` status label, the requester being attributed
+  to the stage their request sat in, and a report unreadable in a dark-themed
+  browser.
+
+### Left open, deliberately
+
+Whether the Purchase Committee may reject outright; what happens when two joint
+approvers disagree; the fate of the legacy `CDC_MEMBER` role; whether a
+carried-forward request should restart at the committee. All four are recorded
+as open questions in `requirement.md` - they change the workflow and need the
+Principal's answer rather than a guess.
+
+Email sending was not touched, by instruction.

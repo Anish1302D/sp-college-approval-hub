@@ -1,6 +1,6 @@
 import React from 'react';
-import { Building2, Calendar, CornerDownRight, Layers, User } from 'lucide-react';
-import { api } from '../../api/client';
+import { Building2, Calendar, CornerDownRight, FileDown, Layers, Printer, User } from 'lucide-react';
+import { api, download, openPrintable } from '../../api/client';
 import { date, money } from '../../api/format';
 import { useApp } from '../../context/AppContext';
 import { useApi, useAction } from '../../hooks/useApi';
@@ -9,10 +9,11 @@ import { Attachments } from '../ui/Attachments';
 import { Modal } from '../ui/Modal';
 import { ErrorState, Loading } from '../ui/States';
 import { StatusBadge } from '../ui/StatusBadge';
+import { BudgetContext } from '../requests/BudgetContext';
 import { CarryForward } from '../requests/CarryForward';
 import { Comments } from '../requests/Comments';
 import { DecisionPanel } from '../requests/DecisionPanel';
-import { DraftPanel } from '../requests/DraftPanel';
+import { RequestEditPanel } from '../requests/RequestEditPanel';
 import { ItemsTable } from '../requests/ItemsTable';
 import { Timeline } from '../requests/Timeline';
 
@@ -26,11 +27,18 @@ const Section = ({ title, children }) => (
 const DECIDED = ['APPROVED', 'PARTIALLY_APPROVED', 'REJECTED', 'FULFILMENT_PENDING', 'FULFILLED', 'CLOSED', 'CARRIED_FORWARD'];
 
 export const RequestDetailModal = () => {
-  const { openRecordState, closeRecord, openRecord, user } = useApp();
+  const { openRecordState, closeRecord, openRecord, user, showToast } = useApp();
   const id = openRecordState?.kind === 'request' ? openRecordState.id : null;
   const state = useApi(id ? `/api/requests/${id}` : null);
   const { run } = useAction();
   const r = state.data;
+
+  const answeredCorrections = (r?.corrections ?? []).filter((c) => c.resolvedAt);
+
+  const openReport = () =>
+    openPrintable(`/api/requests/${r.id}/report.html`).catch((e) => showToast(e.message, 'error'));
+  const downloadReport = () =>
+    download(`/api/requests/${r.id}/report.doc`, `${r.requestNumber}.doc`).catch((e) => showToast(e.message, 'error'));
 
   const removeItem = (item) => {
     const { displayName } = parseCustomItem(item.budgetItem, item.remarks);
@@ -83,6 +91,20 @@ export const RequestDetailModal = () => {
             </button>
           )}
 
+          {/* Out with its requester: approvers see why, and that it is not theirs to move. */}
+          {r.status === 'AWAITING_RESUBMISSION' && !r.permissions.canEdit && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+              <p className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <CornerDownRight className="w-3.5 h-3.5" />
+                Sent back to {r.raisedBy.name} for correction — nothing moves until they resubmit
+              </p>
+              {r.corrections?.[0] && (
+                <p className="text-xs text-amber-900/80 mt-1.5 whitespace-pre-wrap">{r.corrections[0].reason}</p>
+              )}
+            </div>
+          )}
+
+          {r.permissions.canAct && r.department && <BudgetContext request={r} />}
           {r.permissions.canAct && <DecisionPanel key={`${r.id}-${r.status}`} request={r} />}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
@@ -99,7 +121,14 @@ export const RequestDetailModal = () => {
                   : r.course?.name,
               },
               { icon: Calendar, label: 'Submitted', value: r.submittedAt ? date(r.submittedAt) : 'Not yet' },
-              { icon: Layers, label: 'Now with', value: r.stage && r.status.startsWith('UNDER_') ? r.stage.name : '—' },
+              {
+                icon: Layers,
+                label: 'Now with',
+                value: r.status === 'AWAITING_RESUBMISSION'
+                  ? r.raisedBy.name
+                  : (r.stage && r.status.startsWith('UNDER_') ? r.stage.name : '—'),
+                sub: r.status === 'AWAITING_RESUBMISSION' ? 'for correction' : undefined,
+              },
             ].map((f) => (
               <div key={f.label} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
                 <span className="text-gray-400 flex items-center gap-1.5 mb-1"><f.icon className="w-3.5 h-3.5 text-indigo-500" /> {f.label}</span>
@@ -116,7 +145,7 @@ export const RequestDetailModal = () => {
               : <ItemsTable items={r.items} decided={r.items.some((i) => i.status !== 'PENDING')} onRemove={r.permissions.canEdit ? removeItem : undefined} />}
           </Section>
 
-          {r.permissions.canEdit && <DraftPanel request={r} />}
+          {r.permissions.canEdit && <RequestEditPanel request={r} />}
 
           {r.description && (
             <Section title="Justification">
@@ -129,14 +158,53 @@ export const RequestDetailModal = () => {
               files={r.attachments}
               uploadPath={r.permissions.canAttach ? `/api/requests/${r.id}/attachments` : null}
               canDelete={(f) => r.status === 'DRAFT' && (f.uploadedBy.id === user.id || user.roles.includes('ADMIN'))}
+              // Past the draft a document is evidence: it is replaced with a
+              // new version rather than removed, and the old one stays.
+              canReplace={r.permissions.canAttach && r.status !== 'DRAFT'}
             />
           </Section>
+
+          {/* Answered corrections only: the one still open is shown above, in
+              the requester's panel or the banner telling approvers to wait. */}
+          {answeredCorrections.length > 0 && (
+            <Section title={`Earlier corrections (${answeredCorrections.length})`}>
+              <ol className="space-y-2">
+                {answeredCorrections.map((c) => (
+                  <li key={c.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{c.reason}</p>
+                    <p className="text-[10px] text-gray-500 mt-1.5">
+                      {c.requestedBy.name}{c.stageName ? ` · ${c.stageName}` : ''} · {date(c.createdAt)}
+                      {` · answered by version ${c.resolvedByVersion}`}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </Section>
+          )}
 
           {r.permissions.canCarryForward && r.status !== 'DRAFT' && <CarryForward request={r} />}
 
           <Section title="History">
             <Timeline requestId={r.id} />
           </Section>
+
+          {r.status !== 'DRAFT' && (
+            <Section title="Report">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={openReport}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 flex items-center gap-1.5">
+                  <Printer className="w-3.5 h-3.5 text-indigo-500" /> Open the full report
+                </button>
+                <button onClick={downloadReport}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 flex items-center gap-1.5">
+                  <FileDown className="w-3.5 h-3.5 text-indigo-500" /> Download for Word
+                </button>
+                <span className="text-[11px] text-gray-400">
+                  Print the page to file it as a PDF. Everything in it comes from this request's own record.
+                </span>
+              </div>
+            </Section>
+          )}
 
           {r.status !== 'DRAFT' && (
             <Section title="Comments">

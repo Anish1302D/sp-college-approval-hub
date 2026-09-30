@@ -37,6 +37,9 @@ CREATE TABLE courses (
     department_id  INTEGER NOT NULL REFERENCES departments(department_id) ON DELETE RESTRICT,
     code           TEXT NOT NULL,
     name           TEXT NOT NULL,
+    -- Whether the course is government-aided. It decides which side of CDC a
+    -- request belongs to, so it is recorded on the course itself.
+    funding_type   course_funding_type NOT NULL DEFAULT 'GRANT',
     UNIQUE (department_id, code)
 );
 

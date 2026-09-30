@@ -88,6 +88,7 @@ function CourseModal({ course, departments, deptId, onClose, onSaved }) {
     departmentId: course?.departmentId ?? deptId ?? (departments[0]?.id ?? ''),
     code: course?.code ?? '',
     name: course?.name ?? '',
+    fundingType: course?.fundingType ?? 'GRANT',
   });
   const [saving, setSaving] = useState(false);
 
@@ -97,11 +98,16 @@ function CourseModal({ course, departments, deptId, onClose, onSaved }) {
     if (!form.departmentId) return showToast('Select a department', 'error');
     setSaving(true);
     try {
+      const fields = {
+        code: form.code.trim().toUpperCase(),
+        name: form.name.trim(),
+        fundingType: form.fundingType,
+      };
       if (course) {
-        await api(`/api/admin/courses/${course.id}`, { method: 'PATCH', body: { code: form.code.trim().toUpperCase(), name: form.name.trim() } });
+        await api(`/api/admin/courses/${course.id}`, { method: 'PATCH', body: fields });
         showToast(`${form.name} updated`, 'success');
       } else {
-        await api('/api/admin/courses', { method: 'POST', body: { departmentId: Number(form.departmentId), code: form.code.trim().toUpperCase(), name: form.name.trim() } });
+        await api('/api/admin/courses', { method: 'POST', body: { departmentId: Number(form.departmentId), ...fields } });
         showToast(`${form.name} added`, 'success');
       }
       onSaved();
@@ -129,6 +135,17 @@ function CourseModal({ course, departments, deptId, onClose, onSaved }) {
         <label className={labelCls}>Full name *</label>
         <input className={inputCls} placeholder="e.g. Bachelor of Computer Applications"
           value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+      </div>
+      <div>
+        <label className={labelCls}>Funding *</label>
+        <select className={inputCls} value={form.fundingType}
+          onChange={(e) => setForm((f) => ({ ...f, fundingType: e.target.value }))}>
+          <option value="GRANT">Grant (aided)</option>
+          <option value="NON_GRANT">Non-Grant (unaided)</option>
+        </select>
+        <p className="text-[10px] text-gray-400 mt-1">
+          Decides which CDC member — Grant or Non-Grant — this course's requests belong to.
+        </p>
       </div>
     </FormModal>
   );
@@ -240,7 +257,16 @@ export const MasterDataManagement = () => {
                           <div key={course.id} className="flex items-center gap-3 px-12 py-2.5 border-b border-gray-100 last:border-0 hover:bg-white/60 transition-colors">
                             <GraduationCap className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm text-gray-800 font-medium">{course.name}</p>
+                              <p className="text-sm text-gray-800 font-medium flex items-center gap-2">
+                                {course.name}
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${
+                                  course.fundingType === 'NON_GRANT'
+                                    ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                    : 'bg-sky-50 text-sky-700 border border-sky-200'
+                                }`}>
+                                  {course.fundingType === 'NON_GRANT' ? 'Non-Grant' : 'Grant'}
+                                </span>
+                              </p>
                               <p className="text-[10px] text-gray-400 font-mono">{course.code}</p>
                             </div>
                             <div className="flex items-center gap-1">

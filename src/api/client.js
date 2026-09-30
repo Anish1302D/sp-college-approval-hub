@@ -94,6 +94,31 @@ export async function download(path, fallbackName = 'download') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Opens a printable page the session token is needed for. The window is opened
+ * on the click itself — before the fetch — or the browser treats it as a popup
+ * and blocks it.
+ */
+export async function openPrintable(path) {
+  const win = window.open('', '_blank');
+  try {
+    const res = await fetch(`${BASE}${path}`, { headers: headers() });
+    if (!res.ok) {
+      win?.close();
+      await handle(res);
+      return;
+    }
+    const html = await res.text();
+    if (!win) throw new Error('Allow pop-ups for this site to open the report');
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  } catch (err) {
+    win?.close();
+    throw err;
+  }
+}
+
 /** Query string from an object, skipping empty values. */
 export function qs(params) {
   const search = new URLSearchParams();

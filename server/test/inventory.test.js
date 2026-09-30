@@ -59,8 +59,14 @@ test('bills attach only to approved requests', async () => {
     token: tok.admin, body: { ...bill, requestId: draft.id } }), 422);
 
   expectStatus(await t.api('POST', `/api/requests/${draft.id}/submit`, { token: tok.head }), 200);
+  // Validity check by the committee, then the Principal decides: under
+  // ₹50,000 that is the whole route.
   const pc = await t.login('pc1@spcollege.edu');
-  expectStatus(await t.api('POST', `/api/requests/${draft.id}/actions`, { token: pc, body: { action: 'APPROVE' } }), 201);
+  const principal = await t.login('principal@spcollege.edu');
+  expectStatus(await t.api('POST', `/api/requests/${draft.id}/actions`, {
+    token: pc, body: { action: 'ESCALATE', comments: 'In order' } }), 201);
+  expectStatus(await t.api('POST', `/api/requests/${draft.id}/actions`, {
+    token: principal, body: { action: 'APPROVE' } }), 201);
 
   const res = expectStatus(await t.api('POST', '/api/purchase-bills', {
     token: tok.admin, body: { ...bill, requestId: draft.id } }), 201);

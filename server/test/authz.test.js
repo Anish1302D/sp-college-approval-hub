@@ -60,7 +60,8 @@ test('1. PC APPROVE is rejected', async () => {
     token: tok.pc1,
     body: { action: 'APPROVE' },
   });
-  assert.equal(res.status === 422 || res.status === 400 || res.status === 403, true);
+  assert.equal(res.status, 422, `expected a refusal, got ${res.status}`);
+  assert.match(res.body.error.message, /validity review only/);
 });
 
 test('2. Principal APPROVE above 50,000 is rejected', async () => {
@@ -75,7 +76,8 @@ test('2. Principal APPROVE above 50,000 is rejected', async () => {
     token: tok.principal,
     body: { action: 'APPROVE' },
   });
-  assert.equal(res.status === 422 || res.status === 400, true);
+  assert.equal(res.status, 422, `expected a refusal, got ${res.status}`);
+  assert.match(res.body.error.message, /above ₹50,000/);
 });
 
 test('3. Single CDC member approving does not close request', async () => {
@@ -217,54 +219,74 @@ test('9. Dual-staffed CDC member cannot be inserted twice due to stage_approvers
   assert.equal(pkeyFailed, true, 'stage_approvers_pkey prevents assigning multiple role_ids to the same user at the same stage');
 });
 
-test('10. Endpoint checks for Budget Context, Budget Provisions, and Supersede', async () => {
+test('10. Budget context follows request visibility, and only a head declares a provision', async () => {
   const req = await createSubmittedRequest(tok.head, 'Authz test - Endpoint checks', 20000);
 
-  // budget-context for own dept clerk
-  const resContextOwn = await t.api('GET', `/api/requests/${req.id}/budget-context`, { token: tok.clerkCs });
-  console.log('[Test 10a] budget-context (own dept clerk): status', resContextOwn.status, resContextOwn.body ? 'Got context' : 'No context');
+  // The budget picture is part of the request, so it is visible to exactly
+  // those who may see the request — and to nobody else.
+  const own = await t.api('GET', `/api/requests/${req.id}/budget-context`, { token: tok.clerkCs });
+  assert.equal(own.status, 404, 'a clerk who cannot see the request cannot read its budget either');
+  const principal = await t.api('GET', `/api/requests/${req.id}/budget-context`, { token: tok.principal });
+  assert.equal(principal.status, 200, 'the Principal sees every request, so also its budget');
+  const crossDept = await t.api('GET', `/api/requests/${req.id}/budget-context`, { token: tok.headChem });
+  assert.equal(crossDept.status, 404, 'another department\'s head cannot read it');
 
-  // budget-context for cross-dept HOD
-  const resContextCross = await t.api('GET', `/api/requests/${req.id}/budget-context`, { token: tok.headChem });
-  console.log('[Test 10b] budget-context (cross-dept HOD): status', resContextCross.status, resContextCross.body);
-
-  // budget-provisions POST for home HOD
-  const resProvHome = await t.api('POST', '/api/budget-provisions', {
+  // A head declares their own department's provision.
+  expectStatus(await t.api('POST', '/api/budget-provisions', {
     token: tok.head,
     body: { departmentId: ids.csDept, financialYearId: ids.fy, allocatedAmount: 500000 },
+  }), 201);
+
+  // A head cannot declare one for another department...
+  const foreign = await t.api('POST', '/api/budget-provisions', {
+    token: tok.head,
+    body: { departmentId: ids.chemDept, financialYearId: ids.fy, allocatedAmount: 900000 },
   });
-  console.log('[Test 10c] POST /api/budget-provisions (home HOD): status', resProvHome.status, resProvHome.body);
+  assert.equal(foreign.status, 403, `expected a refusal, got ${foreign.status}`);
+
+  // ...and someone with no head role cannot declare one at all.
+  const clerk = await t.api('POST', '/api/budget-provisions', {
+    token: tok.clerkCs,
+    body: { departmentId: ids.csDept, financialYearId: ids.fy, allocatedAmount: 100 },
+  });
+  assert.equal(clerk.status, 403, `expected a refusal, got ${clerk.status}`);
 });
 
-test('11. HOD cross-department read checks', async () => {
+test('11. A head cannot read another department\'s request', async () => {
   const req = await createSubmittedRequest(tok.head, 'Authz test - Cross department read', 20000);
 
-  const detailRes = await t.api('GET', `/api/requests/${req.id}`, { token: tok.headChem });
-  const listRes = await t.api('GET', `/api/requests?departmentId=${ids.csDept}`, { token: tok.headChem });
+  const detail = await t.api('GET', `/api/requests/${req.id}`, { token: tok.headChem });
+  assert.equal(detail.status, 404, 'not 403, which would confirm it exists');
 
-  console.log('[Test 11] HOD cross-dept detail status:', detailRes.status);
-  console.log('[Test 11] HOD cross-dept list count:', listRes.body?.items?.length ?? listRes.body?.length ?? listRes.status);
+  const list = expectStatus(await t.api('GET', '/api/requests', { token: tok.headChem }), 200);
+  assert.equal(list.items.some((r) => r.id === req.id), false, 'nor does it appear in their list');
 });
 
-test('12. ADMIN attempting an approver action', async () => {
+test('12. An administrator is not an approver', async () => {
   const req = await createSubmittedRequest(tok.head, 'Authz test - Admin action', 20000);
 
+  // Admin sees everything, but approval authority comes from stage staffing,
+  // never from a role (server/src/roles.js).
   const res = await t.api('POST', `/api/requests/${req.id}/actions`, {
     token: tok.admin,
     body: { action: 'FORWARD' },
   });
-  console.log('[Test 12] ADMIN action status:', res.status, res.body);
-  assert.notEqual(res.status, 201);
+  assert.equal(res.status, 403, `expected a refusal, got ${res.status}`);
+  assert.equal(res.body.error.code, 'SP004');
 });
 
-test('13. CDC and Chairman RETURN attempt', async () => {
+test('13. Returning for correction belongs to the committee and the Principal alone', async () => {
   const reqCdc = await createSubmittedRequest(tok.head, 'Authz test - CDC Return attempt', 100000);
   expectStatus(await t.api('POST', `/api/requests/${reqCdc.id}/actions`, { token: tok.pc1, body: { action: 'FORWARD' } }), 201);
   expectStatus(await t.api('POST', `/api/requests/${reqCdc.id}/actions`, { token: tok.principal, body: { action: 'FORWARD' } }), 201);
 
-  const resCdcReturn = await t.api('POST', `/api/requests/${reqCdc.id}/actions`, {
+  const res = await t.api('POST', `/api/requests/${reqCdc.id}/actions`, {
     token: tok.cdcGrant,
     body: { action: 'RETURN', comments: 'Needs budget fix' },
   });
-  console.log('[Test 13] CDC RETURN status:', resCdcReturn.status, resCdcReturn.body);
+  assert.equal(res.status, 422, `expected a refusal, got ${res.status}`);
+
+  const detail = expectStatus(await t.api('GET', `/api/requests/${reqCdc.id}`, { token: tok.cdcGrant }), 200);
+  assert.equal(detail.status, 'UNDER_CDC_REVIEW', 'the request did not move');
+  assert.equal(detail.permissions.actions.includes('RETURN'), false, 'nor is it offered to them');
 });
