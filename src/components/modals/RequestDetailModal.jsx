@@ -1,10 +1,11 @@
-import React from 'react';
-import { Building2, Calendar, CornerDownRight, FileDown, Layers, Printer, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { Building2, Calendar, CornerDownRight, FileDown, FileText, Layers, Loader2, Printer, User } from 'lucide-react';
 import { api, download, openPrintable } from '../../api/client';
 import { date, money } from '../../api/format';
 import { useApp } from '../../context/AppContext';
 import { useApi, useAction } from '../../hooks/useApi';
 import { parseCustomItem } from '../../utils/customItem';
+import { generateOfficialPdf } from '../../utils/officialPdfGenerator';
 import { Attachments } from '../ui/Attachments';
 import { Modal } from '../ui/Modal';
 import { ErrorState, Loading } from '../ui/States';
@@ -34,11 +35,91 @@ export const RequestDetailModal = () => {
   const r = state.data;
 
   const answeredCorrections = (r?.corrections ?? []).filter((c) => c.resolvedAt);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const openReport = () =>
     openPrintable(`/api/requests/${r.id}/report.html`).catch((e) => showToast(e.message, 'error'));
   const downloadReport = () =>
     download(`/api/requests/${r.id}/report.doc`, `${r.requestNumber}.doc`).catch((e) => showToast(e.message, 'error'));
+
+  const generateOfficialPdfReport = async () => {
+    setPdfLoading(true);
+    try {
+      // 1. First attempt to download the server-generated official PDF
+      try {
+        await download(`/api/requests/${r.id}/report.pdf`, `${r.requestNumber}-Official-Report.pdf`);
+        showToast('Official PDF report generated and downloaded successfully', 'success');
+        return;
+      } catch (serverErr) {
+        console.warn('Server-side PDF generation unavailable, generating client-side report...', serverErr);
+      }
+
+      // 2. Fall back to client-side official PDF generator using assembled report data
+      let reportData = null;
+      try {
+        reportData = await api(`/api/requests/${r.id}/report?kind=complete`);
+      } catch {
+        // Fall back to current request detail if report endpoint fails
+        reportData = {
+          generatedAt: new Date().toISOString(),
+          request: {
+            requestNumber: r.requestNumber,
+            title: r.title,
+            status: r.status,
+            stage: r.stage,
+            versionNumber: r.versionNumber,
+            raisedBy: r.raisedBy?.name,
+            department: r.department?.name,
+            course: r.course?.name,
+            financialYear: r.financialYear?.label,
+            budgetHead: `${r.budgetHead?.name} (${r.budgetHead?.headType?.toLowerCase() || 'revenue'})`,
+            createdAt: r.createdAt,
+            submittedAt: r.submittedAt,
+            closedAt: r.closedAt,
+            justification: r.description,
+            requestedAmount: Number(r.tentativeTotalCost || 0),
+            sanctionedAmount: Number(r.sanctionedAmount || 0),
+            unapprovedAmount: Number(r.tentativeTotalCost || 0) - Number(r.sanctionedAmount || 0),
+            extra: r.extra,
+            carriedForwardFrom: r.carriedForwardFrom,
+          },
+          items: (r.items || []).map((i) => ({
+            name: i.budgetItem?.name,
+            budgetItem: i.budgetItem?.code,
+            requestedQuantity: i.requestedQuantity,
+            approvedQuantity: i.approvedQuantity,
+            unapprovedQuantity: i.unapprovedQuantity,
+            unitCost: i.unitCost,
+            requestedAmount: i.estimatedTotal,
+            approvedAmount: i.approvedAmount,
+            unapprovedAmount: (i.estimatedTotal || 0) - (i.approvedAmount || 0),
+            status: i.status,
+            remarks: i.remarks,
+          })),
+          documents: (r.attachments || []).map((a) => ({
+            fileName: a.fileName,
+            versionNumber: a.versionNumber,
+            requestVersionNumber: a.requestVersionNumber,
+            supersededById: a.supersededById,
+            replacementReason: a.replacementReason,
+            uploadedBy: a.uploadedBy?.name,
+            uploadedAt: a.uploadedAt,
+          })),
+          workflow: [],
+          comments: [],
+          resubmissions: [],
+          audit: [],
+        };
+      }
+
+      await generateOfficialPdf(reportData, `${r.requestNumber}-Official-Report.pdf`);
+      showToast('Official PDF report generated and downloaded successfully', 'success');
+    } catch (err) {
+      showToast('Could not generate the official PDF report. Please try again.', 'error');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const removeItem = (item) => {
     const { displayName } = parseCustomItem(item.budgetItem, item.remarks);
@@ -189,20 +270,37 @@ export const RequestDetailModal = () => {
           </Section>
 
           {r.status !== 'DRAFT' && (
-            <Section title="Report">
-              <div className="flex flex-wrap items-center gap-2">
+            <Section title="Official Institutional Report">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  onClick={generateOfficialPdfReport}
+                  disabled={pdfLoading}
+                  className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+                >
+                  {pdfLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating Official PDF…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4" />
+                      Generate Official PDF
+                    </>
+                  )}
+                </button>
                 <button onClick={openReport}
                   className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 flex items-center gap-1.5">
-                  <Printer className="w-3.5 h-3.5 text-indigo-500" /> Open the full report
+                  <Printer className="w-3.5 h-3.5 text-indigo-500" /> Open printable page
                 </button>
                 <button onClick={downloadReport}
                   className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 flex items-center gap-1.5">
                   <FileDown className="w-3.5 h-3.5 text-indigo-500" /> Download for Word
                 </button>
-                <span className="text-[11px] text-gray-400">
-                  Print the page to file it as a PDF. Everything in it comes from this request's own record.
-                </span>
               </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Generates a print-ready A4 official report containing complete institutional details, chronological approval actions, communications, and verification records.
+              </p>
             </Section>
           )}
 

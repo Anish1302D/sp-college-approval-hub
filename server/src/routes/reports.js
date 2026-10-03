@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireRole } from '../auth.js';
 import { queryAll, withUser } from '../db.js';
 import { notFound } from '../errors.js';
+import { generatePdfReport } from '../pdfReport.js';
 import { SECTIONS, assembleReport, renderReportHtml } from '../reporting.js';
 import { loadDetail } from './requests.js';
 import { flag, intId, pagination, param } from '../validate.js';
@@ -183,6 +184,15 @@ reportsRouter.get('/requests/:id/report.doc', async (req, res) => {
   res.type('application/msword');
   res.attachment(`${report.request.requestNumber}-${kind}.doc`);
   res.send(renderReportHtml(report, spec));
+});
+
+// The official institutional print-ready PDF report
+reportsRouter.get('/requests/:id/report.pdf', async (req, res) => {
+  const kind = reportKind.parse(req.query.kind);
+  const { report, spec } = await buildReport(req, kind);
+  res.type('application/pdf');
+  res.attachment(`${report.request.requestNumber}-${kind}.pdf`);
+  await generatePdfReport(report, spec, res);
 });
 
 // The attention panel's target: opens straight onto the stale requests rather

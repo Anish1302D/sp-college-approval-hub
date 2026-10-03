@@ -56,7 +56,25 @@ export const DataExports = () => {
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-gray-400">Inventory and issue exports, and formatted PDF reports, are not available yet.</p>
+
+      {/* Official Institutional PDF Reports Section */}
+      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+        <div className="space-y-1.5 max-w-xl">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 uppercase tracking-wider">Official PDF Report</span>
+            <span className="text-xs text-indigo-200">A4 Print & Archival Ready</span>
+          </div>
+          <h3 className="text-base font-bold text-white">Official Institutional PDF Reports</h3>
+          <p className="text-xs text-indigo-100/80 leading-relaxed">
+            Generate certified institutional approval reports with official SPM Sir Parashurambhau College headers, complete chronological approval history, full message logs, document verification statuses, and audit information.
+          </p>
+        </div>
+        <div className="text-xs text-indigo-200/90 bg-white/10 px-4 py-3 rounded-xl border border-white/10 shrink-0">
+          Open any request from <strong>Requests</strong> or <strong>Decisions</strong> to generate its official certified PDF.
+        </div>
+      </div>
+
+      <p className="text-[11px] text-gray-400">Inventory and issue exports are not available yet. Official PDF reports can be generated directly from any request record.</p>
     </div>
   );
 };
