@@ -142,18 +142,49 @@ comes from stage staffing in the database.
 npm test
 ```
 
-72 tests drive the real API over HTTP, signed in as the seeded users, against a
+133 tests drive the real API over HTTP, signed in as the seeded users, against a
 database rebuilt from `db/schema` and `db/seed` before each test file. They
 cover the full escalation path to the Chairman, partial approval, authority
 refusals, visibility between roles, seal tamper detection, uploads, issues,
 inventory and the audit log.
 
-Needs `TEST_ADMIN_URL` — a superuser connection, used only to build the test
-database. The API under test connects as `app_user`, exactly as in production.
+Nine of those tests (`test/code_review_issues.test.js`) are pure unit tests and
+need no database; the other eight files do.
+
+### Prerequisites
+
+A reachable PostgreSQL and two connection strings in `server/.env`:
+
+- `TEST_ADMIN_URL` — a superuser connection, used only to build the throwaway
+  `spc_api_test` database.
+- `DATABASE_URL` — the `app_user` connection the API under test uses, exactly
+  as in production. `app_user` is created `NOLOGIN` by `db/schema/14_rls.sql`;
+  `scripts/reset-test-db.js` gives it the password from this URL on first run.
+
+**Mind the port.** `db/docker-compose.yml` publishes PostgreSQL on **5433**, to
+avoid clashing with a local installation already using 5432 — so `.env.example`
+shows 5433. If you instead use a PostgreSQL installed directly on the machine,
+it is on **5432** and both URLs must say so. A connection refusal at startup is
+an environment failure, not a test result, and the suite now says which host it
+could not reach.
+
+### Row-Level Security checks
+
+Separately from `npm test`, 52 SQL assertions check that RLS holds when queried
+as `app_user` directly. They assert exact row counts, so they need a database
+freshly built from schema and seed:
+
+```bash
+node scripts/reset-test-db.js
+psql -U postgres -d spc_api_test -f ../db/tests/rls_app_user.sql
+```
+
+Everything runs in one transaction that is rolled back, so no rows survive.
 
 ## Not included
 
-- **Email.** Notifications are in-app only. The table has an `EMAIL` channel,
-  but nothing creates or sends email notifications yet.
 - **Legal digital signatures.** See "Approval seals" above.
-- **Frontend integration.** `src/` in the repository root still reads mock data.
+- **Guaranteed email delivery.** Notification email is sent fire-and-forget
+  (`notifyRequestAsync` in `src/routes/requests.js`): a send that fails is
+  logged and the request still proceeds. There is no retry queue, and with no
+  SMTP or Resend credentials configured nothing goes out at all.

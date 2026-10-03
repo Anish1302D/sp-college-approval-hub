@@ -89,7 +89,7 @@ export function inspectZipContainer(buffer) {
  * Secondary sniff: if the declared MIME type is ambiguous or generic
  * (e.g. application/octet-stream), inspect ZIP containers or magic bytes.
  */
-export function detectType(buffer, declaredMime, fileName) {
+export function detectType(buffer, declaredMime, _fileName) {
   if (!buffer || buffer.length === 0) return null;
 
   // ZIP container handling (DOCX and XLSX share ZIP magic bytes)
@@ -124,7 +124,7 @@ export function detectType(buffer, declaredMime, fileName) {
 export function cleanFileName(name) {
   const base = path
     .basename(String(name ?? 'file'))
-    .replace(/[\p{Cc}"\\\/]/gu, '_');
+    .replace(/[\p{Cc}"\\/]/gu, '_');
   return base.slice(0, 200) || 'file';
 }
 

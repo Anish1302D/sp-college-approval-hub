@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main, revisit]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Frontend: lint and production build. No database needed.
+  # -------------------------------------------------------------------------
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  # -------------------------------------------------------------------------
+  # API: the real test suite against a real PostgreSQL, plus the RLS checks.
+  #
+  # The suite builds a throwaway `spc_api_test` database from db/schema and
+  # db/seed for every test file, so it needs a superuser (TEST_ADMIN_URL) as
+  # well as the app_user connection the API itself uses. app_user is created
+  # NOLOGIN by db/schema/14_rls.sql; scripts/reset-test-db.js gives it the
+  # password from DATABASE_URL on first run.
+  # -------------------------------------------------------------------------
+  api:
+    name: API (133 tests + 52 RLS checks)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # The suite rewrites the database name to spc_api_test; only the
+      # credentials and host matter here.
+      DATABASE_URL: postgresql://app_user:ci_app_user_password@localhost:5432/spc_approval
+      TEST_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # Test-only values. Both must be at least 32 characters (config.js).
+      JWT_SECRET: ci_jwt_secret_not_used_in_production_000
+      SIGNING_SECRET: ci_signing_secret_not_for_production_00
+      # Keep the mailer quiet: with no credentials it logs a failure per
+      # notification instead of trying to reach a real SMTP host.
+      SMTP_HOST: localhost
+      SMTP_PORT: 1025
+      SMTP_SECURE: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install psql (for the RLS checks)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install API dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: API tests
+        working-directory: server
+        run: npm test
+
+      # The RLS file asserts exact row counts, so it needs a database freshly
+      # built from schema + seed — the test run above leaves its own rows
+      # behind in spc_api_test.
+      - name: Rebuild the test database for the RLS checks
+        working-directory: server
+        run: node scripts/reset-test-db.js
+
+      - name: Row-Level Security checks
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d spc_api_test \
+            -v ON_ERROR_STOP=1 -f db/tests/rls_app_user.sql | tee rls.log
+          # The script prints a PASS/FAIL line per check and a summary; a
+          # non-zero failed column must fail the job.
+          if grep -qE '^ FAIL' rls.log; then
+            echo "::error::Row-Level Security checks failed"
+            exit 1
+          fi
+
+  # -------------------------------------------------------------------------
+  # Dependency audit. Advisory for the frontend, enforced for the server.
+  # -------------------------------------------------------------------------
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The server ships to the college's machine and is at zero advisories;
+      # keep it that way.
+      - name: Server audit (enforced)
+        working-directory: server
+        run: npm audit --audit-level=low
+
+      # The frontend's open advisories are in the Vite/Tailwind build chain
+      # and affect the dev server, not the files served to users. Clearing
+      # them needs Tailwind 4 and Vite 8, both breaking upgrades, so this step
+      # reports without failing the build.
+      - name: Frontend audit (advisory only)
+        run: npm audit || true

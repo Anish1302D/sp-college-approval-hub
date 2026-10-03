@@ -27,7 +27,7 @@ before(async () => {
   const officeItems = expectStatus(await t.api('GET', `/api/budget-heads/${ids.office}/items`, { token: tok.head }), 200);
   for (const i of [...itItems, ...officeItems]) ids[i.code] = i.id;
 });
-after(() => t.close());
+after(() => t?.close());
 
 // ---------------------------------------------------------------------------
 // Drafting

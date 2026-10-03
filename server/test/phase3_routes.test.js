@@ -31,7 +31,7 @@ before(async () => {
   ids.fy = fys[0].id;
 });
 
-after(() => t.close());
+after(() => t?.close());
 
 test('1. Purchase Committee actions & restrictions', async (s) => {
   let smallReqId;
@@ -214,8 +214,6 @@ test('4. Versioned documents', async (s) => {
 });
 
 test('5. Budget provision endpoints', async (s) => {
-  let provId;
-
   await s.test('HOD creates departmental budget provision', async () => {
     const created = expectStatus(await t.api('POST', '/api/budget-provisions', {
       token: tok.head,
@@ -227,7 +225,6 @@ test('5. Budget provision endpoints', async (s) => {
         remarks: 'Annual IT allocation',
       },
     }), 201);
-    provId = created.id;
     assert.equal(created.allocatedAmount, 1000000);
   });
 

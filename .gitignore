@@ -15,5 +15,6 @@ server/uploads/
 scratch/
 
 # IDE / agent settings
+.claude
 .claude/
 

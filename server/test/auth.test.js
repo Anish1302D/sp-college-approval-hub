@@ -5,7 +5,7 @@ import { expectStatus, startApi } from './helpers.js';
 
 let t;
 before(async () => { t = await startApi(); });
-after(() => t.close());
+after(() => t?.close());
 
 test('signs in with a seeded account and describes the user', async () => {
   const token = await t.login('principal@spcollege.edu');

@@ -59,13 +59,6 @@ function actionsAt(stageCode, isFinalStage, amount) {
 // Email notifications (fire-and-forget)
 // ---------------------------------------------------------------------------
 
-const STAGE_LABELS = {
-  UNDER_PURCHASE_COMMITTEE_REVIEW: 'Purchase Committee Review',
-  UNDER_PRINCIPAL_REVIEW: 'Principal Review',
-  UNDER_CDC_REVIEW: 'CDC Review',
-  UNDER_FINAL_AUTHORITY_REVIEW: 'Final Authority Review',
-};
-
 /**
  * Resolves the principal user (or falls back to the configured email).
  * @returns {{ email: string, name: string }}
