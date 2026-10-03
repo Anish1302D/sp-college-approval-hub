@@ -23,7 +23,7 @@ before(async () => {
   }), 201);
   requestId = draft.id;
 });
-after(() => t.close());
+after(() => t?.close());
 
 let attachmentId;
 let uploaded;

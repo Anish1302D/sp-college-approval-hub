@@ -17,7 +17,7 @@ before(async () => {
     who[key] = expectStatus(await t.api('GET', '/api/auth/me', { token: tok[key] }), 200).id;
   }
 });
-after(() => t.close());
+after(() => t?.close());
 
 test('anyone can raise an issue, and the Principal hears about it', async () => {
   const issue = expectStatus(await t.api('POST', '/api/issues', {

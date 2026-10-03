@@ -29,7 +29,7 @@ before(async () => {
   const years = expectStatus(await t.api('GET', '/api/financial-years', { token: tok.head }), 200);
   ids.fy = years[0].id;
 });
-after(() => t.close());
+after(() => t?.close());
 
 const report = async (id, token, kind) =>
   expectStatus(await t.api('GET', `/api/requests/${id}/report${kind ? `?kind=${kind}` : ''}`, { token }), 200);

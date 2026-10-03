@@ -271,7 +271,7 @@ function UserModal({ user, roles, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 
 export const UserManagement = () => {
-  const { showToast, refresh } = useApp();
+  const { refresh } = useApp();
   const { run } = useAction();
   const users = useApi('/api/admin/users');
   const roles = useApi('/api/admin/roles');
