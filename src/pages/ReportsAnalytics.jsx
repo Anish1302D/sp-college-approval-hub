@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { BarChart3, CheckCircle2, IndianRupee, TrendingUp } from 'lucide-react';
-import { qs } from '../api/client';
+import { BarChart3, CheckCircle2, FileDown, IndianRupee, Loader2, TrendingUp } from 'lucide-react';
+import { api, qs } from '../api/client';
 import { lakhs, money } from '../api/format';
 import { useApi } from '../hooks/useApi';
 import { StatCard } from '../components/ui/StatCard';
@@ -26,6 +26,26 @@ export const ReportsAnalytics = () => {
   const decided = totals.approved + totals.rejected;
   const max = Math.max(1, ...rows.map((r) => r.requested));
 
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const downloadReport = async () => {
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      const [data, { generateReportsSummaryPdf }] = await Promise.all([
+        api(`/api/reports/summary${qs({ financialYearId: year })}`),
+        import('../utils/reportsSummaryPdf'),
+      ]);
+      if (!data?.byBudgetHead) throw new Error('The report data could not be loaded.');
+      const label = (data.financialYear?.label ?? 'current').replace(/[^0-9A-Za-z-]/g, '');
+      generateReportsSummaryPdf(data, `SP_College_Procurement_Report_FY_${label}.pdf`);
+    } catch (err) {
+      setDownloadError(err?.message ?? 'Could not generate the report.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -33,11 +53,26 @@ export const ReportsAnalytics = () => {
           <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-indigo-500" /> Reports</h2>
           <p className="text-xs text-gray-500 mt-1">Submitted requests for FY {spend.data?.financialYear ?? '…'}. Drafts are not counted.</p>
         </div>
-        <select aria-label="Financial year" value={year} onChange={(e) => setYear(e.target.value)} className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs self-start">
-          <option value="">Current year</option>
-          {(years.data ?? []).map((y) => <option key={y.id} value={y.id}>FY {y.label}</option>)}
-        </select>
+        <div className="flex items-center gap-2 self-start">
+          <select aria-label="Financial year" value={year} onChange={(e) => setYear(e.target.value)} className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs">
+            <option value="">Current year</option>
+            {(years.data ?? []).map((y) => <option key={y.id} value={y.id}>FY {y.label}</option>)}
+          </select>
+          <button
+            id="download-reports-pdf"
+            type="button"
+            onClick={downloadReport}
+            disabled={downloading || spend.loading}
+            className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait text-white rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors"
+          >
+            {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+            {downloading ? 'Preparing…' : 'Download report (PDF)'}
+          </button>
+        </div>
       </div>
+      {downloadError && (
+        <p role="alert" className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{downloadError}</p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard title="Requests submitted" value={totals.requests} subtext={`${lakhs(totals.requested)} requested`} icon={TrendingUp} color="indigo" />
