@@ -97,7 +97,7 @@ function routeTaken(timeline, current) {
 export async function assembleReport(db, detail) {
   const requestId = detail.id;
 
-  const [timelineRows, auditRows, versionRows, budgetRows] = await Promise.all([
+  const [timelineRows, auditRows, versionRows, budgetRows, commentRows] = await Promise.all([
     db.query(
       `SELECT t.*, a.performed_by
          FROM v_request_timeline t
@@ -125,6 +125,15 @@ export async function assembleReport(db, detail) {
       ? db.query('SELECT * FROM fn_get_department_budget_context($1, $2, $3)',
         [detail.department.id, detail.financialYear.id, detail.budgetHead.id])
       : Promise.resolve({ rows: [] }),
+    db.query(
+      `SELECT c.*, u.full_name AS author_name, ws.code AS stage_code, ws.name AS stage_name
+         FROM comments c
+         JOIN users u ON u.user_id = c.author_user_id
+         LEFT JOIN workflow_stages ws ON ws.stage_id = c.stage_id
+        WHERE c.request_id = $1
+        ORDER BY c.created_at, c.comment_id`,
+      [requestId],
+    ),
   ]);
 
   const timeline = timelineRows.rows.map((r) => ({
@@ -166,6 +175,10 @@ export async function assembleReport(db, detail) {
     };
   });
 
+  const DECIDED_SET = ['APPROVED', 'PARTIALLY_APPROVED', 'REJECTED', 'FULFILMENT_PENDING', 'FULFILLED', 'CLOSED'];
+  const isDecided = DECIDED_SET.includes(detail.status);
+  const lastAction = [...timeline].reverse().find((t) => ['APPROVE', 'PARTIAL_APPROVE', 'REJECT'].includes(t.action)) || timeline[timeline.length - 1];
+
   return {
     generatedAt: new Date().toISOString(),
     // A. Request information
@@ -187,6 +200,8 @@ export async function assembleReport(db, detail) {
       requestedAmount: Number(detail.tentativeTotalCost),
       sanctionedAmount: Number(detail.sanctionedAmount),
       unapprovedAmount: Number(detail.tentativeTotalCost) - Number(detail.sanctionedAmount),
+      extra: detail.extra,
+      carriedForwardFrom: detail.carriedForwardFrom,
     },
     // B. Item details
     items: detail.items.map((i) => ({
@@ -216,6 +231,25 @@ export async function assembleReport(db, detail) {
     })),
     // E. Workflow history, as a narrative
     workflow: timeline.map((entry) => ({ ...entry, sentence: narrate(entry) })),
+    // Comments & discussion message history
+    comments: (commentRows?.rows || []).map((c) => ({
+      id: c.comment_id,
+      body: c.body,
+      author: c.author_name,
+      stage: c.stage_name ?? (c.stage_code ? (STAGE_NAMES[c.stage_code] ?? c.stage_code) : null),
+      visibility: c.visibility,
+      createdAt: c.created_at,
+    })),
+    // Final institutional decision
+    decision: {
+      isDecided,
+      status: detail.status,
+      decidedAt: detail.closedAt || (isDecided ? lastAction?.at : null),
+      authority: lastAction ? `${lastAction.by}${lastAction.stage ? ` (${lastAction.stage.name})` : ''}` : (detail.stage?.name ?? 'Review Authority'),
+      sanctionedAmount: Number(detail.sanctionedAmount || 0),
+      requestedAmount: Number(detail.tentativeTotalCost || 0),
+      remarks: lastAction?.comments || lastAction?.rejectionReason || (isDecided ? 'Final decision recorded in institutional approval register.' : 'Under active workflow review.'),
+    },
     // F. Resubmission history — empty unless it was actually resubmitted
     resubmissions,
     // G. Audit trail
@@ -226,6 +260,18 @@ export async function assembleReport(db, detail) {
       previousStatus: r.before_json?.status ?? null,
       newStatus: r.after_json?.status ?? null,
     })),
+    // Audit summary totals
+    auditSummary: {
+      reportId: detail.requestNumber,
+      generatedAt: new Date().toISOString(),
+      updatedAt: detail.updatedAt || detail.closedAt || detail.submittedAt || detail.createdAt,
+      totalEvents: timeline.length,
+      totalMessages: (commentRows?.rows || []).length + timeline.filter((t) => t.comments || t.rejectionReason).length,
+      totalDocuments: detail.attachments.length,
+      reportVersion: `v${detail.versionNumber || 1}.0`,
+    },
+    // Institutional certification text
+    certification: 'This report is a system-generated institutional record containing the information, communications, actions and status history available in the system at the time of report generation.',
     // H. The route this request actually took
     route: routeTaken(timeline, detail.stage?.code ?? null),
   };
@@ -387,8 +433,11 @@ export function renderReportHtml(report, { sections = SECTIONS, title = 'Procure
 </style></head>
 <body>
 <header>
-  <div class="college">S. P. College</div>
-  <div class="title">${escape(title)}</div>
+  <div style="font-size: 9pt; font-weight: bold; letter-spacing: 0.5px; color: #333;">SHIKSHANA PRASARAKA MANDALI'S</div>
+  <div class="college">SIR PARASHURAMBHAU COLLEGE</div>
+  <div style="font-size: 10pt; font-weight: bold; font-style: italic; color: #555;">(Empowered Autonomous) — S. P. College</div>
+  <div style="font-size: 8.5pt; color: #666; margin-top: 2px;">Tilak Road, Sadashiv Peth, Pune – 411030, Maharashtra, India</div>
+  <div class="title" style="margin-top: 8px;">${escape(title)}</div>
   <div class="meta">
     <span><strong>Request:</strong> ${escape(r.requestNumber)}</span>
     <span><strong>Department:</strong> ${escape(r.department ?? '—')}</span>

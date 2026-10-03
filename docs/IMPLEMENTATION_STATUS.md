@@ -746,8 +746,7 @@ test attempts the bypass and asserts the refusal.
 |---|---|---|
 | JSON | `GET /api/requests/:id/report` | Complete assembled data |
 | HTML | `GET /api/requests/:id/report.html` | A4-styled, print-ready; PDF via the browser's print dialog |
-| "DOCX" | `GET /api/requests/:id/report.doc` | **HTML in a `.doc` container** — Word opens and edits it, but it is not Office Open XML |
-| True PDF | — | ❌ none |
+| True PDF | `GET /api/requests/:id/report.pdf` | ✅ Print-ready official institutional A4 PDF (PDFKit backend stream + client jsPDF fallback) with SPM header, chronological history, complete messages, documents, decision, audit and certification |
 | True `.docx` | — | ❌ none |
 
 **Report kinds** (`?kind=`): `complete`, `purchase-committee`, `principal`,

@@ -150,6 +150,8 @@ test('a report can only be printed by someone who could read the request', async
   assert.equal(stranger.status, 404);
   const asHtml = await t.api('GET', `/api/requests/${ids.simple}/report.html`, { token: tok.headChem });
   assert.equal(asHtml.status, 404, 'and no format is a way around it');
+  const asPdf = await t.api('GET', `/api/requests/${ids.simple}/report.pdf`, { token: tok.headChem });
+  assert.equal(asPdf.status, 404, 'and PDF format honors authorization');
 
   const page = await t.api('GET', `/api/requests/${ids.simple}/report.html`, { token: tok.principal });
   expectStatus(page, 200);
@@ -157,6 +159,12 @@ test('a report can only be printed by someone who could read the request', async
   const html = page.buffer.toString('utf8');
   assert.ok(html.includes('S. P. College'));
   assert.ok(html.includes('Lab microphone'));
+
+  const pdfDoc = await t.api('GET', `/api/requests/${ids.simple}/report.pdf`, { token: tok.principal });
+  expectStatus(pdfDoc, 200);
+  assert.match(pdfDoc.headers.get('content-type'), /application\/pdf/);
+  assert.match(pdfDoc.headers.get('content-disposition'), /\.pdf"?$/);
+  assert.ok(pdfDoc.buffer.slice(0, 5).toString('utf8').startsWith('%PDF-'));
 });
 
 test('the stage reports are views of the same figures, not separate arithmetic', async () => {
@@ -171,9 +179,19 @@ test('the stage reports are views of the same figures, not separate arithmetic',
   assert.match(doc.headers.get('content-disposition'), /\.doc"?$/);
 });
 
+test('official institutional PDF report generates deterministic, valid PDF', async () => {
+  const pdfDoc = await t.api('GET', `/api/requests/${ids.partial}/report.pdf`, { token: tok.principal });
+  expectStatus(pdfDoc, 200);
+  assert.match(pdfDoc.headers.get('content-type'), /application\/pdf/);
+  assert.match(pdfDoc.headers.get('content-disposition'), /\.pdf"?$/);
+  assert.ok(pdfDoc.buffer.length > 1000);
+  assert.ok(pdfDoc.buffer.toString('utf8', 0, 8).startsWith('%PDF-1.'));
+});
+
 test('the audit trail appears for an administrator and for nobody else', async () => {
   const asAdmin = await report(ids.simple, tok.admin);
   assert.ok(asAdmin.audit.length > 0);
   const asRequester = await report(ids.simple, tok.head);
   assert.equal(asRequester.audit.length, 0, 'the audit log stays with the administrator');
 });
+
