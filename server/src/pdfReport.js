@@ -43,7 +43,7 @@ function clean(str) {
  * Generates an official, print-ready institutional PDF report conforming to SP College specifications.
  * Streams directly to output stream or returns a promise resolving to a Buffer.
  */
-export async function generatePdfReport(report, spec = {}, streamOrRes = null) {
+export async function generatePdfReport(report, _spec = {}, streamOrRes = null) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -86,7 +86,7 @@ export async function generatePdfReport(report, spec = {}, streamOrRes = null) {
       const comments = report.comments || [];
       const documents = report.documents || [];
       const resubmissions = report.resubmissions || [];
-      const audit = report.audit || [];
+      const _audit = report.audit || [];
       const decision = report.decision || {};
       const auditSummary = report.auditSummary || {
         reportId: r.requestNumber,

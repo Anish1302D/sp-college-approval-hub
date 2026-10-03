@@ -97,7 +97,7 @@ function routeTaken(timeline, current) {
 export async function assembleReport(db, detail) {
   const requestId = detail.id;
 
-  const [timelineRows, auditRows, versionRows, budgetRows] = await Promise.all([
+  const [timelineRows, auditRows, versionRows, budgetRows, commentRows] = await Promise.all([
     db.query(
       `SELECT t.*, a.performed_by
          FROM v_request_timeline t

@@ -52,7 +52,6 @@ export async function generateOfficialPdf(reportData, saveAsFilename = null) {
   const left = 36;
   const right = 559; // 595.28 - 36
   const contentWidth = right - left; // 523pt
-  const pageHeight = 841.89;
   const maxY = 760;
 
   const r = reportData.request || {};
@@ -72,17 +71,6 @@ export async function generateOfficialPdf(reportData, saveAsFilename = null) {
     totalDocuments: documents.length,
     reportVersion: `v${r.versionNumber || 1}.0`,
   };
-
-  function ensureSpace(needed) {
-    if (doc.lastAutoTable && doc.lastAutoTable.finalY) {
-      if (doc.lastAutoTable.finalY + needed > maxY) {
-        doc.addPage();
-        return 45;
-      }
-      return doc.lastAutoTable.finalY + 10;
-    }
-    return doc.internal.pageSize.getHeight() - 50;
-  }
 
   // -------------------------------------------------------------------------
   // 1. INSTITUTIONAL HEADER (PAGE 1)
