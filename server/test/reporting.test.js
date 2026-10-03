@@ -195,3 +195,23 @@ test('the audit trail appears for an administrator and for nobody else', async (
   assert.equal(asRequester.audit.length, 0, 'the audit log stays with the administrator');
 });
 
+test('GET /api/reports/summary provides comprehensive FY reporting data scoped by role', async () => {
+  const summaryPrincipal = expectStatus(await t.api('GET', `/api/reports/summary?financialYearId=${ids.fy}`, { token: tok.principal }), 200);
+  assert.ok(summaryPrincipal.financialYear);
+  assert.ok(Array.isArray(summaryPrincipal.byBudgetHead));
+  assert.ok(Array.isArray(summaryPrincipal.byStatus));
+  assert.ok(Array.isArray(summaryPrincipal.byDepartment));
+  assert.ok(Array.isArray(summaryPrincipal.byStage));
+  assert.ok(Array.isArray(summaryPrincipal.byItemType));
+  assert.ok(Array.isArray(summaryPrincipal.byFunding));
+  assert.ok(Array.isArray(summaryPrincipal.monthly));
+  assert.ok(Array.isArray(summaryPrincipal.provisions));
+  assert.ok(Array.isArray(summaryPrincipal.pendingOverThreeDays));
+  assert.ok(Array.isArray(summaryPrincipal.register));
+  assert.ok(Array.isArray(summaryPrincipal.issues));
+
+  const summaryHead = expectStatus(await t.api('GET', `/api/reports/summary?financialYearId=${ids.fy}`, { token: tok.head }), 200);
+  assert.ok(summaryHead.byBudgetHead);
+});
+
+

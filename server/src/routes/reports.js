@@ -129,6 +129,131 @@ reportsRouter.get('/reports/by-budget-head', async (req, res) => {
   res.json(body);
 });
 
+// Everything behind the Reports page — and the detail behind each figure — in
+// one payload, for the downloadable institutional summary report. Every query
+// runs under the caller's row-level security, so the report never contains a
+// request its reader could not already open; the Principal's covers the
+// college, a requester's their own requests.
+reportsRouter.get('/reports/summary', async (req, res) => {
+  const { financialYearId } = z.object({ financialYearId: intId.optional() }).parse(req.query);
+  const body = await withUser(req.user.id, async (db) => {
+    const { rows: fyRows } = await db.query(
+      `SELECT financial_year_id AS id, label, start_date::text AS start_date, end_date::text AS end_date
+         FROM financial_years
+        WHERE CASE WHEN $1::int IS NULL THEN is_active ELSE financial_year_id = $1 END`,
+      [financialYearId ?? null],
+    );
+    const year = fyRows[0] ?? { id: null, label: null, start_date: null, end_date: null };
+    const fy = year.id;
+    const decided = DECIDED_FOR;
+
+    // Submitted (non-draft) requests in the year, with their dimensions.
+    const BASE = `
+      FROM requests r
+      JOIN budget_heads bh         ON bh.budget_head_id = r.budget_head_id
+      JOIN users u                 ON u.user_id = r.raised_by
+      LEFT JOIN departments d      ON d.department_id = r.department_id
+      LEFT JOIN courses c          ON c.course_id = r.course_id
+      LEFT JOIN workflow_stages ws ON ws.stage_id = r.current_stage_id
+     WHERE r.current_status <> 'DRAFT' AND r.financial_year_id = $1`;
+
+    const AGG = `
+      count(*)::int AS requests,
+      count(*) FILTER (WHERE r.current_status::text = ANY($2::text[]))::int AS approved,
+      count(*) FILTER (WHERE r.current_status = 'PARTIALLY_APPROVED')::int AS partial,
+      count(*) FILTER (WHERE r.current_status = 'REJECTED')::int AS rejected,
+      count(*) FILTER (WHERE r.current_status::text <> ALL($2::text[])
+                         AND r.current_status NOT IN ('REJECTED', 'CARRIED_FORWARD'))::int AS pending,
+      COALESCE(sum(r.tentative_total_cost), 0) AS requested,
+      COALESCE(sum(r.sanctioned_amount) FILTER (WHERE r.current_status::text = ANY($2::text[])), 0) AS sanctioned`;
+
+    const [heads, statuses, depts, stages, itemTypes, funding, monthly, provisions, ageing, register, issues] =
+      await queryAll(db, [
+        [`SELECT bh.budget_head_id, bh.code, bh.name, bh.head_type, ${AGG}
+            ${BASE} GROUP BY bh.budget_head_id, bh.code, bh.name, bh.head_type
+            ORDER BY requested DESC, bh.name`, [fy, decided]],
+        [`SELECT r.current_status::text AS status, count(*)::int AS requests,
+                 COALESCE(sum(r.tentative_total_cost), 0) AS requested,
+                 COALESCE(sum(r.sanctioned_amount), 0) AS sanctioned
+            ${BASE} GROUP BY r.current_status ORDER BY requests DESC`, [fy]],
+        [`SELECT COALESCE(d.name, 'Unassigned') AS name, d.code, ${AGG}
+            ${BASE} GROUP BY d.name, d.code ORDER BY requested DESC`, [fy, decided]],
+        [`SELECT ws.name AS stage, ws.code, count(*)::int AS requests,
+                 COALESCE(sum(r.tentative_total_cost), 0) AS amount,
+                 round(avg(EXTRACT(EPOCH FROM NOW() - COALESCE(r.submitted_at, r.created_at)) / 86400), 1) AS avg_days,
+                 max(EXTRACT(DAY FROM NOW() - COALESCE(r.submitted_at, r.created_at)))::int AS max_days
+            ${BASE} AND left(r.current_status::text, 6) = 'UNDER_'
+            GROUP BY ws.name, ws.code, ws.stage_id ORDER BY ws.stage_id`, [fy]],
+        [`SELECT ri.item_type_snapshot::text AS item_type, count(*)::int AS lines,
+                 COALESCE(sum(ri.requested_quantity), 0) AS requested_qty,
+                 COALESCE(sum(ri.approved_quantity), 0) AS approved_qty,
+                 COALESCE(sum(ri.estimated_total), 0) AS requested,
+                 COALESCE(sum(ri.approved_amount), 0) AS approved
+            FROM request_items ri JOIN requests r ON r.request_id = ri.request_id
+           WHERE r.current_status <> 'DRAFT' AND r.financial_year_id = $1
+           GROUP BY ri.item_type_snapshot ORDER BY requested DESC`, [fy]],
+        [`SELECT COALESCE(c.funding_type::text, 'UNSPECIFIED') AS funding, ${AGG}
+            ${BASE} GROUP BY c.funding_type ORDER BY requested DESC`, [fy, decided]],
+        [`SELECT to_char(date_trunc('month', COALESCE(r.submitted_at, r.created_at)), 'YYYY-MM') AS month, ${AGG}
+            ${BASE} GROUP BY 1 ORDER BY 1`, [fy, decided]],
+        [`SELECT department_name, budget_head_name, allocated_amount, utilized_amount,
+                 committed_amount, remaining_amount
+            FROM v_department_budget_summary WHERE financial_year_id = $1
+           ORDER BY department_name, budget_head_name NULLS FIRST`, [fy]],
+        [`SELECT request_number, title, raised_by_name, current_status, current_stage_name,
+                 tentative_total_cost, days_pending, submitted_at
+            FROM v_pending_requests
+           WHERE financial_year_id = $1 AND current_status <> 'DRAFT' AND days_pending > 3
+           ORDER BY days_pending DESC, request_number`, [fy]],
+        [`SELECT r.request_number, r.title, r.current_status::text AS status, u.full_name AS raised_by,
+                 d.name AS department, bh.name AS budget_head, ws.name AS stage,
+                 r.tentative_total_cost AS requested, r.sanctioned_amount AS sanctioned,
+                 r.submitted_at, r.closed_at
+            ${BASE} ORDER BY r.submitted_at NULLS LAST, r.request_number`, [fy]],
+        [`SELECT status::text AS status, count(*)::int AS n FROM issues
+           WHERE $1::date IS NULL OR (created_at >= $1::date AND created_at < $2::date + 1)
+           GROUP BY status ORDER BY n DESC`, [year.start_date, year.end_date]],
+      ]);
+
+    return {
+      financialYear: { id: fy, label: year.label, startDate: year.start_date, endDate: year.end_date },
+      generatedAt: new Date().toISOString(),
+      generatedBy: { id: req.user.id, name: req.user.name, roles: req.user.roles },
+      byBudgetHead: heads.rows.map((r) => ({
+        budgetHead: { id: r.budget_head_id, code: r.code, name: r.name, headType: r.head_type },
+        requests: r.requests, approved: r.approved, partial: r.partial, rejected: r.rejected,
+        pending: r.pending, requested: r.requested, sanctioned: r.sanctioned,
+      })),
+      byStatus: statuses.rows,
+      byDepartment: depts.rows,
+      byStage: stages.rows.map((r) => ({ stage: r.stage, code: r.code, requests: r.requests, amount: r.amount, avgDays: r.avg_days, maxDays: r.max_days })),
+      byItemType: itemTypes.rows.map((r) => ({
+        itemType: r.item_type, lines: r.lines, requestedQty: r.requested_qty,
+        approvedQty: r.approved_qty, requested: r.requested, approved: r.approved,
+      })),
+      byFunding: funding.rows,
+      monthly: monthly.rows,
+      provisions: provisions.rows.map((r) => ({
+        department: r.department_name, budgetHead: r.budget_head_name,
+        allocated: r.allocated_amount, utilized: r.utilized_amount,
+        committed: r.committed_amount, remaining: r.remaining_amount,
+      })),
+      pendingOverThreeDays: ageing.rows.map((r) => ({
+        requestNumber: r.request_number, title: r.title, raisedBy: r.raised_by_name,
+        status: r.current_status, stage: r.current_stage_name, amount: r.tentative_total_cost,
+        daysPending: r.days_pending, submittedAt: r.submitted_at,
+      })),
+      register: register.rows.map((r) => ({
+        requestNumber: r.request_number, title: r.title, status: r.status, raisedBy: r.raised_by,
+        department: r.department, budgetHead: r.budget_head, stage: r.stage,
+        requested: r.requested, sanctioned: r.sanctioned, submittedAt: r.submitted_at, closedAt: r.closed_at,
+      })),
+      issues: issues.rows,
+    };
+  });
+  res.json(body);
+});
+
 // ---------------------------------------------------------------------------
 // The formal report on one request
 // ---------------------------------------------------------------------------
