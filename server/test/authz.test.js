@@ -36,7 +36,7 @@ before(async () => {
   ids.fy = fys[0].id;
 });
 
-after(() => t.close());
+after(() => t?.close());
 
 async function createSubmittedRequest(token, title, amount) {
   const draft = expectStatus(await t.api('POST', '/api/requests', {

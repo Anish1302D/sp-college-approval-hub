@@ -11,7 +11,7 @@ before(async () => {
   tok.principal = await t.login('principal@spcollege.edu');
   tok.head = await t.login('head.cs@spcollege.edu');
 });
-after(() => t.close());
+after(() => t?.close());
 
 let itemId;
 
